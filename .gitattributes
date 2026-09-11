@@ -1,0 +1,10 @@
+# Hedef ortam Linux (Ubuntu 22.04). Windows'ta gelistirilse bile depoda ve
+# calisma kopyasinda satir sonu LF kalir; CRLF CMake/shell/CI tarafinda kirilir.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.pdf binary
+*.bag binary
+*.db3 binary
+*.mcap binary
