@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>kerteriz_sim</name>
+  <version>0.1.0</version>
+  <description>Deterministik yorunge ve sensor ureteci. ROS bagimliligi yoktur.</description>
+  <maintainer email="tokelifw@gmail.com">Kerteriz</maintainer>
+  <license>MIT</license>
+  <buildtool_depend>cmake</buildtool_depend>
+  <depend>kerteriz_core</depend>
+  <export><build_type>cmake</build_type></export>
+</package>

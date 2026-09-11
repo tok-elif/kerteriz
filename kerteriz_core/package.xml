@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://relaxng.org/ns/structure/1.0"?>
+<package format="3">
+  <name>kerteriz_core</name>
+  <version>0.1.0</version>
+  <description>
+    Kerteriz kestirim çekirdeği. Saf C++17; ROS bağımlılığı yoktur (ADR-1).
+    Bu package.xml yalnızca colcon'un paketi düz CMake olarak derlemesi içindir.
+  </description>
+  <maintainer email="tokelifw@gmail.com">Kerteriz</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>cmake</buildtool_depend>
+  <depend>eigen</depend>
+
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>
