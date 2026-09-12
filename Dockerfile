@@ -40,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #                  editörle formatlamak hook'la çelişirdi. Hook ile BİREBİR aynı
 #                  sürüm pip'ten kurulur; /usr/local/bin PATH'te /usr/bin'den
 #                  önce geldiği için `clang-format` doğrudan bunu çözer.
-RUN pip3 install --no-cache-dir "pre-commit>=3.7" "clang-format==18.1.8"
+RUN pip3 install --no-cache-dir "pre-commit==4.6.2" "clang-format==18.1.8"
 
 # Non-root geliştirici kullanıcısı. Devcontainer bağlı çalışma alanına
 # root sahipli dosya bırakmasın diye UID/GID host ile eşleşebilir.
