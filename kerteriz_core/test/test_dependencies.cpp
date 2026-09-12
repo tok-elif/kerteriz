@@ -2,13 +2,12 @@
 /// S2 duman testi — bagimliliklarin baglandigini dogrular.
 /// Konvansiyon ve matematik testleri Faz 0 - S5..S8'de gelir.
 
-#include <gtest/gtest.h>
+#include "kerteriz/version.hpp"
 
 #include <Eigen/Dense>
+#include <gtest/gtest.h>
 #include <manif/SE_2_3.h>
 #include <manif/SO3.h>
-
-#include "kerteriz/version.hpp"
 
 TEST(Dependencies, VersionHeaderIsReachable) {
   EXPECT_EQ(kerteriz::kVersionMajor, 0);
