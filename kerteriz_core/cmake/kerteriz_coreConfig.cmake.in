@@ -1,5 +1,9 @@
 @PACKAGE_INIT@
 include(CMakeFindDependencyMacro)
 find_dependency(Eigen3 3.4 NO_MODULE)
+# manif 0.0.5 FetchContent ile gelir ve ayni install prefixine kurulur
+# (share/manif/cmake). Export edilen kerteriz::core MANIF::manif hedefini
+# refere ettigi icin tuketici tarafinda da bulunmasi gerekir.
+find_dependency(manif)
 include("${CMAKE_CURRENT_LIST_DIR}/kerteriz_coreTargets.cmake")
 check_required_components(kerteriz_core)
