@@ -12,5 +12,8 @@ Checks: >
   -readability-magic-numbers,
   -bugprone-easily-swappable-parameters
 WarningsAsErrors: 'bugprone-*'
-HeaderFilterRegex: 'kerteriz.*'
+# Yola bagimli OLMAMALI. 'kerteriz.*' checkout yolu 'kerteriz' icerdiginde
+# (CI'da /home/runner/work/kerteriz/kerteriz/...) build/_deps altindaki
+# ucuncu taraf basliklariyla da eslesiyordu. Kaynak duzenine sabitlendi.
+HeaderFilterRegex: '.*/kerteriz_(core|sim)/include/.*'
 FormatStyle: file
