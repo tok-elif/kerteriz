@@ -225,6 +225,7 @@ proje ömrü uzar ve bakım bilinci görünür olur.
 | ADR-20 | düzeltir | ADR-15 (tam snapshot sahipliği backend değil orkestratör) |
 | ADR-21 | sınırlar | ADR-2'nin “tanım gereği tutarlı” iddiasının kapsamı |
 | ADR-22 | netleştirir | ADR-16 (allocation-free sınırı sayısal hot path) |
+| ADR-23 | gereksinim koyar | INTERFACES §6 `compute_protection_level` / `FaultDetector` (Faz 4'te yeniden ele alınır) |
 
 ---
 
@@ -461,3 +462,56 @@ karmaşıklık. Tahsis kuralını tamamen kaldırmak — sayısal hot path'in de
 **Sonuçlar.** `MeasurementWorkspace`, state/covariance ve update ara matrisleri sabit kapasiteli
 kalır. Kuyruk sahipliği ayrı performans katmanıdır ve ileride ölçülerek optimize edilir.
 
+
+---
+
+## ADR-23 · Protection level arıza-farkında olmalıdır · Faz 4 gereksinimi
+
+> **Freeze sonrası eklenmiştir.** ADR-13…22 kod yazılmadan önce donduruldu; bu ADR Faz 0
+> sırasında yapılan dış literatür taramasında bulunan bir açığı kayda geçirir. Bağlayıcılığı
+> diğerleriyle aynıdır.
+
+**Karar.** Protection level yalnız nominal kovaryanstan türetilemez. Faz 4'te `ProtectionLevel`,
+hedef bütünlük riskinde kestirim hatasını **tespit edilmemiş arıza hipotezleri altında da**
+sınırlamak zorundadır.
+
+`SPEC.md` §7'deki E6 başarı ölçütü — Stanford diyagramında HMI bölgesinin boş olması —
+**daraltılmaz**. Bağlayıcı kalır; uygulamanın ona yükselmesi beklenir.
+
+Bu ADR bir **gereksinim kaydıdır, tasarım değildir.** Arıza hipotezi API'si, solution
+separation formülasyonu, alt-çözüm yönetimi ve Faz 4 uygulaması **burada tasarlanmaz.**
+Faz 4 açıldığında ayrı bir ADR ile yazılır.
+
+**Gerekçe.** `INTERFACES.md` §6'daki dondurulmuş imza şudur:
+
+```cpp
+ProtectionLevel compute_protection_level(const NavCovariance& P, int active_dof,
+                                         const FaultDetector& fd,
+                                         Scalar target_integrity_risk);
+```
+
+`FaultDetector`'ın dışarı verdiği bilgi `SensorHealth{kNominal, kSuspect, kFaulted}` ve
+`is_excluded(sensor)` ile sınırlıdır. Yani PL, kovaryans artı "hangi sensör dışlandı"
+bilgisiyle hesaplanabilir. Bu, bütünlük literatüründeki **nominal** PL ailesidir: sıfır
+ortalamalı Gauss hatası varsayımı altında hatayı sınırlar.
+
+Açık buradadır. Tespit eşiğinin **altında** kalan bir arıza kestirimi kaydırır ama `P`'yi
+şişirmez ve sensörü dışlatmaz. Kovaryans tabanlı PL bu durumda hatayı sınırlamaz; gerçek
+hata PL'i aşar ve E6'nın HMI bölgesinde nokta belirir. Deney kendi başarı ölçütünü düşürür.
+
+Yerleşik çözüm ailesi bütünlük riskini **her arıza hipotezi üzerinden** sınırlar: tam çözüm
+ile arıza-toleranslı alt-çözümler arasındaki ayrım, tespit eşiği ve hipotez önsel olasılıkları
+birlikte kullanılır (solution separation / ARAIM hattı; Kalman filtresine uyarlanmış hâli
+Arana–Hafez–Joerger–Spenko, IJRR 2020). Üç değerli bir sağlık enum'u bu veriyi taşıyamaz.
+
+**Alternatifler.** *E6'yı nominal koşula daraltmak* — reddedildi. Projenin tezi çalışma anında
+hata üst sınırı üretmektir; arızayı kapsam dışı bırakan bir PL, `SPEC.md` §2'de eleştirilen
+"aşırı-iyimser kovaryans" problemini bu sefer bütünlük katmanında tekrar üretir.
+*Faz 4 API'sini şimdi tasarlamak* — reddedildi. Faz 0'da ölçüm modeli, FDI davranışı ve arıza
+enjeksiyon sonuçları yoktur; bugün yazılacak hipotez arayüzü ölçüsüz tahmine dayanır.
+
+**Sonuçlar.** `INTERFACES.md` §6'daki `compute_protection_level` imzası ve `FaultDetector`
+arayüzü **bugün değişmez** — Faz 4 açılana kadar dondurulmuş hâlleriyle geçerlidir. Faz 4'e
+girerken ikisi de bu ADR ışığında yeniden ele alınır ve gereken genişletme ayrı bir ADR ile
+yapılır. Faz 4 planına giriş koşulu olarak şu soru eklenir: *PL'in gördüğü veri, tespit
+edilmemiş arıza hipotezlerini sınırlamaya yetiyor mu?*

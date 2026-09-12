@@ -3,7 +3,7 @@
 > Bu dosya, bu repoda çalışan her AI ajanının **ilk okuyacağı** dosyadır.
 > Kurallar tavsiye değil, kısıttır. Bir kuralı çiğnemen gerekiyorsa önce sor.
 >
-> **Mimari dondurulmuştur: ADR-13…22 bağlayıcıdır.** Yeniden tasarım önerme.
+> **Mimari dondurulmuştur: ADR-13…23 bağlayıcıdır.** Yeniden tasarım önerme.
 > Bir karara katılmıyorsan uygula ve ayrıca not düş; tartışma kod yazmayı geciktirir.
 
 ---

@@ -33,7 +33,7 @@ Kerteriz adlı bir ROS 2 durum kestirim projesinde çalışıyorsun.
 ÖNCE ŞUNLARI OKU, bu sırayla: CLAUDE.md, docs/SPEC.md, docs/CONVENTIONS.md,
 docs/INTERFACES.md, docs/design/DECISIONS.md
 
-MİMARİ DONDURULMUŞTUR (ADR-13…22). Aşağıdakiler tercih değil, sözleşmedir.
+MİMARİ DONDURULMUŞTUR (ADR-13…23). Aşağıdakiler tercih değil, sözleşmedir.
 
 BOZULMAZ KURALLAR:
 1. kerteriz_core ASLA ROS'a bağımlı olmaz. rclcpp başlığı, ROS mesaj tipi veya
