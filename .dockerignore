@@ -1,0 +1,8 @@
+# Derleme çıktıları imaj bağlamına girmesin — build/ altında FetchContent ile
+# indirilen googletest ve manif kaynakları var, bağlamı gereksiz büyütür.
+build/
+install/
+log/
+.git/
+results/
+**/__pycache__/
