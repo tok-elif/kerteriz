@@ -1,5 +1,7 @@
 # Kerteriz
 
+[![CI](https://github.com/tok-elif/kerteriz/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tok-elif/kerteriz/actions/workflows/ci.yml)
+
 **Çoğu kestirimci nerede olduğunu söyler. Kerteriz *ne kadar güvenebileceğini* de söyler.**
 
 ROS 2 için çok-sensörlü durum kestirim çerçevesi: kestirim hatasına çalışma anında sayısal

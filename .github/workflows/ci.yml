@@ -1,0 +1,197 @@
+# kerteriz CI — PHASE0.md · S4
+#
+# İşler: build · test (Humble + Jazzy matrisi) · core-standalone (ROS'suz)
+#        lint (clang-format + clang-tidy) · checks (denetimler)
+#
+# Araç sürümleri Dockerfile (S3) ile kasten aynıdır; geliştirme imajı ile CI
+# arasında biçimlendirici/linter çatlağı olmaması için:
+#   clang-format 18.1.8 (pip, .pre-commit-config.yaml ile birebir)
+#   clang-tidy   14      (Ubuntu 22.04 apt — bu yüzden lint işi 22.04'te koşar)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # ADR-12: birincil hedef Humble, CI matrisi Humble + Jazzy
+  # ---------------------------------------------------------------------------
+  build-test:
+    name: build + test (${{ matrix.ros_distro }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ros_distro: [humble, jazzy]
+    container:
+      image: ros:${{ matrix.ros_distro }}-ros-base
+    steps:
+      - name: Bağımlılıklar
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential cmake git libeigen3-dev \
+            python3-colcon-common-extensions
+          rm -rf /var/lib/apt/lists/*
+
+      - uses: actions/checkout@v4
+
+      - name: colcon build
+        shell: bash
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          colcon build --event-handlers console_direct-
+
+      - name: colcon test
+        shell: bash
+        run: |
+          source /opt/ros/${{ matrix.ros_distro }}/setup.bash
+          colcon test --event-handlers console_direct-
+          colcon test-result --all --verbose
+
+  # ---------------------------------------------------------------------------
+  # R1 / ADR-1: kerteriz_core ROS kurulu OLMAYAN makinede derlenir.
+  # ROS sürülmeyen bir runner'da düz CMake ile kurulur ve test edilir.
+  # ---------------------------------------------------------------------------
+  core-standalone:
+    name: core-standalone (ROS'suz)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bağımlılıklar
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git libeigen3-dev
+
+      - name: ROS ortamı gerçekten yok mu
+        run: |
+          test -z "${AMENT_PREFIX_PATH:-}" || { echo "AMENT_PREFIX_PATH dolu"; exit 1; }
+          test -z "${ROS_DISTRO:-}"        || { echo "ROS_DISTRO dolu"; exit 1; }
+          test ! -d /opt/ros               || { echo "/opt/ros mevcut"; exit 1; }
+          echo "ROS ortamı yok — bağımsız derleme anlamlı."
+
+      - name: Configure · build · test
+        run: |
+          cmake -S kerteriz_core -B build/core -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/core -j"$(nproc)"
+          ctest --test-dir build/core --output-on-failure
+
+      - name: Test binary'si ROS'a linklenmemiş
+        run: |
+          if ldd build/core/test/test_dependencies | grep -iE "ros|rcl|rmw"; then
+            echo "ROS linki bulundu"; exit 1
+          fi
+          echo "ROS linki yok."
+
+  # ---------------------------------------------------------------------------
+  # lint — sürümler Dockerfile ile aynı (bkz. dosya başı notu)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: lint (clang-format + clang-tidy)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bağımlılıklar
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git libeigen3-dev clang-tidy
+          pip3 install --no-cache-dir "clang-format==18.1.8"
+
+      - name: Sürümler
+        run: |
+          clang-format --version
+          clang-tidy --version | head -1
+
+      - name: clang-format
+        run: |
+          files=$(git ls-files '*.hpp' '*.cpp')
+          [ -n "$files" ] || { echo "C++ kaynağı yok — atlanıyor."; exit 0; }
+          clang-format --dry-run --Werror $files
+
+      - name: clang-tidy
+        run: |
+          files=$(git ls-files 'kerteriz_core/*.cpp')
+          [ -n "$files" ] || { echo "kerteriz_core'da .cpp yok — atlanıyor."; exit 0; }
+          cmake -S kerteriz_core -B build/tidy -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+          clang-tidy -p build/tidy $files
+
+  # ---------------------------------------------------------------------------
+  # checks — CLAUDE.md §6.1 denetimleri
+  #
+  # ① ve ⑤ burada zorlanır. ②, ③, ④ henüz YOK:
+  #     ② durum kapasitesi static_assert'i  -> S5 ile gelir
+  #     ③ J_res işareti, kapalı formlu test -> S8 ile gelir
+  #     ④ Jacobian testi registry'si        -> S10 ile gelir
+  # Bu iş, o adımlar geldikçe genişletilecektir. Sahte "geçti" üretmemek için
+  # bugün var olmayan denetimler burada taklit EDİLMEZ.
+  # ---------------------------------------------------------------------------
+  checks:
+    name: checks (denetimler)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Denetim ① — kerteriz_core ROS'suz
+        run: |
+          if grep -rE "rclcpp|_msgs/|ament_" kerteriz_core/ \
+               --include=*.hpp --include=*.cpp --include=CMakeLists.txt; then
+            echo "R1 ihlali: kerteriz_core içinde ROS sembolü."; exit 1
+          fi
+          echo "Denetim ① temiz."
+
+      - name: Denetim ⑤ — yasaklı sembol taraması (kod)
+        run: |
+          # Kod tarafı sert kapıdır: .hpp/.cpp içinde bu sembollerin hiçbiri
+          # bulunmamalıdır. Doküman tarafı aşağıda ayrıca raporlanır.
+          status=0
+          while IFS= read -r sym; do
+            if grep -rnF -- "$sym" $(git ls-files '*.hpp' '*.cpp') 2>/dev/null; then
+              echo "YASAKLI SEMBOL kodda: $sym"; status=1
+            fi
+          done <<'SYMS'
+          MatX H
+          struct Residual
+          MatX noise
+          CompositeState<
+          reset(const NavState
+          std::span
+          .inverse()
+          SYMS
+          [ "$status" -eq 0 ] && echo "Denetim ⑤ (kod) temiz."
+          exit $status
+
+      - name: Denetim ⑤ — doküman taraması (bilgilendirme)
+        run: |
+          # CLAUDE.md §6.1'e göre .md tarafında "bunu yapma" uyarıları ve
+          # dokunulmaz ADR-1…12 metni muaftır. Bu muafiyet mekanizması henüz
+          # makine-okunur değil, bu yüzden burası RAPORLAR, düşürmez.
+          # Muafiyet işaretlemesi eklenince sert kapıya çevrilecektir.
+          grep -rnF -e 'MatX H' -e 'struct Residual' -e 'MatX noise' \
+                    -e 'CompositeState<' -e 'reset(const NavState' \
+                    -e 'std::span' -e '.inverse()' \
+                    $(git ls-files '*.md') || echo "Dokümanlarda eşleşme yok."
+
+      - name: ADR numaraları kesintisiz
+        run: |
+          python3 - <<'PY'
+          import re, io, sys
+          s = io.open('docs/design/DECISIONS.md', encoding='utf-8').read()
+          n = sorted({int(x) for x in re.findall(r'^## ADR-(\d+)', s, re.M)})
+          missing = [i for i in range(1, max(n) + 1) if i not in n]
+          print('ADR 1..%d, adet %d' % (max(n), len(n)))
+          if missing:
+              print('EKSIK ADR:', missing); sys.exit(1)
+          print('ADR numaralari kesintisiz.')
+          PY
