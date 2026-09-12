@@ -8,7 +8,7 @@ ROS 2 için çok-sensörlü durum kestirim çerçevesi: kestirim hatasına çal�
 üst sınır (*protection level*) üreten, tutarlılığı Monte Carlo NEES analiziyle doğrulanan,
 SE₂(3) üzerinde değişmez (invariant) EKF tabanlı füzyon.
 
-> **Durum: Faz 0 — iskelet.** Mimari dondurulmuştur (ADR-1…22). Filtre henüz yoktur;
+> **Durum: Faz 0 — iskelet.** Mimari dondurulmuştur (ADR-1…23). Filtre henüz yoktur;
 > yol haritası için [`docs/PHASE0.md`](docs/PHASE0.md).
 
 ---
@@ -78,7 +78,7 @@ Bağımlılıklar: Eigen 3.4 (sistem; yoksa indirilir), [manif](https://github.c
 | [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) | Çerçeve, kuaterniyon, `J_res`, Joseph, zaman, birim |
 | [`docs/INTERFACES.md`](docs/INTERFACES.md) | `kerteriz_core` arayüz sözleşmesi |
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | Yeni bir platforma entegrasyon |
-| [`docs/design/DECISIONS.md`](docs/design/DECISIONS.md) | ADR-1…22 |
+| [`docs/design/DECISIONS.md`](docs/design/DECISIONS.md) | ADR-1…23 |
 | [`docs/PHASE0.md`](docs/PHASE0.md) | Aktif faz planı |
 | [`CLAUDE.md`](CLAUDE.md) | Katkıda bulunan ajanlar için kurallar |
 
