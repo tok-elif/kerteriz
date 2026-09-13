@@ -227,7 +227,8 @@ TEST(LinearUpdate, JosephKeepsSymmetryWhereNaiveFormDrifts) {
   StateVec d = StateVec::Zero();
 
   for (int i = 0; i < adim; ++i) {
-    linear_update(j, r, r_cov, dim, dof, p_joseph, d);
+    const auto sonuc = linear_update(j, r, r_cov, dim, dof, p_joseph, d);
+    ASSERT_TRUE(sonuc.spd_ok) << "adim " << i << ": S pozitif tanimli cozulemedi";
 
     const Eigen::MatrixXd jj = j.topLeftCorner(dim, dof);
     const Eigen::MatrixXd s = jj * p_naif * jj.transpose() + r_cov.topLeftCorner(dim, dim);
@@ -247,6 +248,30 @@ TEST(LinearUpdate, JosephKeepsSymmetryWhereNaiveFormDrifts) {
 }
 
 // --- Bozuk giris ------------------------------------------------------------
+
+TEST(LinearUpdate, RejectsSingularInnovationCovariance) {
+  // REGRESYON. Eigen 3.4'te LDLT::isPositive() pozitif YARI-tanimli matris icin
+  // de true doner. J, P ve R'nin hepsi sifirken S tekildir; yalnizca
+  // isPositive()'e guvenilseydi bu durum kabul edilir ve anlamsiz bir cozum
+  // uretilirdi. Kesin pozitiflik (vectorD > 0) bunu reddeder.
+  const int dof = 3;
+  const int dim = 2;
+
+  const JacMat j = JacMat::Zero();     // J = 0
+  const ResMat r_cov = ResMat::Zero(); // R = 0
+  StateMat p = StateMat::Zero();       // P = 0
+  const StateMat p_once = p;
+
+  ResVec r = ResVec::Zero();
+  r.head(dim).setOnes(); // r = 1
+
+  StateVec d = StateVec::Ones();
+  const auto sonuc = linear_update(j, r, r_cov, dim, dof, p, d);
+
+  EXPECT_FALSE(sonuc.spd_ok) << "tekil S kabul edildi — pozitif yari-tanimli gecti";
+  EXPECT_EQ(d.cwiseAbs().maxCoeff(), 0.0) << "tekil S'de delta sifirlanmadi";
+  EXPECT_EQ((p - p_once).cwiseAbs().maxCoeff(), 0.0) << "tekil S'de P kirletildi";
+}
 
 TEST(LinearUpdate, LeavesCovarianceUntouchedWhenInnovationNotPositiveDefinite) {
   const int dof = 3;

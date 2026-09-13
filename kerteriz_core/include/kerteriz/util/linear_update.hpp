@@ -54,7 +54,8 @@ struct LinearUpdateResult {
 /// \param delta_out  d = -P J_res^T S^-1 r; yalnizca ilk dof girdisi yazilir
 ///
 /// spd_ok false donerse P DEGISTIRILMEZ ve delta_out sifirlanir — bozuk bir
-/// cozumle durumu kirletmemek icin.
+/// cozumle durumu kirletmemek icin. spd_ok KESIN pozitif tanimliligi ister;
+/// pozitif yari-tanimli (tekil) S kabul EDILMEZ.
 inline LinearUpdateResult linear_update(const Eigen::Ref<const JacMat>& j_res,
                                         const Eigen::Ref<const ResVec>& r,
                                         const Eigen::Ref<const ResMat>& r_cov, int dim, int dof,
@@ -80,8 +81,16 @@ inline LinearUpdateResult linear_update(const Eigen::Ref<const JacMat>& j_res,
     s.bottomLeftCorner(kalan, dim).setZero();
   }
 
+  // isPositive() TEK BASINA YETMEZ: Eigen 3.4'te pozitif YARI-tanimli matris
+  // icin de true doner. Tekil bir S (ornegin J, P ve R'nin hepsi sifir) bu
+  // kontrolden gecer ve cozum anlamsiz olur. Bu yuzden LDLT pivotlarinin
+  // (vectorD) tamaminin KESIN pozitif olmasi ayrica zorlanir.
+  //
+  // Kullanilmayan bolumun kosegeni 1 ile dolduruldugu icin padding bu kontrole
+  // yanlis pozitif katki vermez.
   const Eigen::LDLT<ResMat> ldlt(s);
-  out.spd_ok = (ldlt.info() == Eigen::Success) && ldlt.isPositive();
+  out.spd_ok = (ldlt.info() == Eigen::Success) && ldlt.isPositive() &&
+               (ldlt.vectorD().minCoeff() > Scalar(0));
   if (!out.spd_ok) {
     delta_out.setZero();
     return out; // P'ye dokunulmaz
