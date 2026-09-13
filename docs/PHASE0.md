@@ -268,12 +268,22 @@ entegre ettiğinde sapma gürültü modeliyle tutarlı.
 kurulur ki Faz 1'de ilk ölçüm yazıldığında denetim otomatik işlesin.
 
 ```cpp
-// Kayıt, Jacobian testini de zorunlu kılar.
+// Ölçümün yanında, kendi çeviri biriminde:
 KERTERIZ_REGISTER_MEASUREMENT(GnssPosition, "gnss_position");
-KERTERIZ_REGISTER_JACOBIAN_TEST(GnssPosition);
+
+// Test ağacında. Makro GÖVDE bekler — kayıt ile testin kendisi tek yapıdır.
+KERTERIZ_REGISTER_JACOBIAN_TEST(GnssPosition) {
+  // analitik Jacobian'ı numeric_residual_jacobian ile karşılaştır
+}
 ```
 
+Gövde zorunluluğu bu adımın uygulanmasında eklendi. Kaydın gövdesiz hâli
+(`KERTERIZ_REGISTER_JACOBIAN_TEST(GnssPosition);`) "testi olmayan test kaydı"na
+izin verirdi; gövde beklendiğinde böyle bir kayıt **linklenmez**, çünkü makro
+iç-bağlantılı bir fonksiyonun adresini alır ama tanımı bulunmaz.
+
 Test paketi: registry'deki her ölçüm için Jacobian testi kaydı var mı → yoksa **düşer**.
+Kayıtlı testler ayrıca **çağrılır**; yalnızca varlıklarını saymak kaydı boş bir beyana çevirirdi.
 
 **DoD:** sahte bir ölçüm tipiyle mekanizma doğrulanmış — testi kaydedilmediğinde paket düşüyor.
 

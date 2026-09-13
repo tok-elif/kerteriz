@@ -219,10 +219,17 @@ jobs:
   # Ampirik olarak doğrulandı: güncellemede işaret çevrildiğinde bu test
   # düşer, sayısal Jacobian testi ise geçmeye devam eder.
   #
-  # ④ henüz YOK:
-  #     ④ Jacobian testi registry'si -> S10 ile gelir
-  # Bu iş, o adımlar geldikçe genişletilecektir. Sahte "geçti" üretmemek için
-  # bugün var olmayan denetimler burada taklit EDİLMEZ.
+  # ④ (Jacobian testi zorunluluğu) S10'da geldi: test_measurement_registry
+  # içindeki Denetim4.* testleri. Ayrı bir adım gerekmez — registry programın
+  # kendi içindedir, denetim de bir testtir. CLAUDE.md §6.1 dosya tarayan
+  # script yazmayı zaten yasaklar. Testi build-test ve core-standalone işleri
+  # koşturur; bir ölçüm Jacobian testsiz kaydolursa paket düşer.
+  # Ampirik olarak doğrulandı: SahteTeker'in test kaydı silindiğinde denetim
+  # tipi adıyla düşüyor, gövdesiz bir test kaydı ise hiç linklenmiyor.
+  #
+  # Böylece beş denetimin dördü canlı; ⑤'in doküman yarısı S11'de sert kapıya
+  # çevrilecek. Sahte "geçti" üretmemek için bugün var olmayan denetimler
+  # burada taklit EDİLMEZ.
   # ---------------------------------------------------------------------------
   checks:
     name: checks (denetimler)
