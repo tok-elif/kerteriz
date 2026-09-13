@@ -1,12 +1,11 @@
 /// \file
 /// S5 — INTERFACES §0 tipleri ve ArrayView birim testleri.
 
-#include <array>
-#include <type_traits>
-
-#include <gtest/gtest.h>
-
 #include "kerteriz/types.hpp"
+
+#include <array>
+#include <gtest/gtest.h>
+#include <type_traits>
 
 namespace {
 
@@ -108,8 +107,8 @@ TEST(ArrayViewTest, DerlemeZamaninda) {
 }
 
 TEST(ArrayViewTest, KullaniciTipiyleCalisir) {
-  const std::array<kerteriz::WeakDirection, 2> yonler{
-      kerteriz::WeakDirection{"yaw", 0.5}, kerteriz::WeakDirection{"wheel_scale", 0.1}};
+  const std::array<kerteriz::WeakDirection, 2> yonler{kerteriz::WeakDirection{"yaw", 0.5},
+                                                      kerteriz::WeakDirection{"wheel_scale", 0.1}};
   ArrayView<kerteriz::WeakDirection> v(yonler.data(), yonler.size());
 
   ASSERT_EQ(v.size(), 2U);

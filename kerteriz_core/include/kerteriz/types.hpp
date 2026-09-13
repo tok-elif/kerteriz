@@ -8,12 +8,15 @@
 ///
 /// Denetim (2) (CLAUDE.md §6.1) burada derleme zamaninda zorlanir; kayit
 /// sirasindaki kapasite kontrolu NavState ile (Faz 1) gelir.
+///
+/// NOT: kerteriz_core/CMakeLists.txt'deki ayni kural burada da gecerlidir —
+/// bu dosyadaki yorumlar yasakli sembolleri LITERAL olarak icermez; boylece
+/// denetim (5) yorum ayiklamadan da temiz calisir.
 
+#include <Eigen/Core>
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
-
-#include <Eigen/Core>
 
 namespace kerteriz {
 
@@ -43,22 +46,23 @@ using ResVec = Eigen::Matrix<Scalar, kMaxResidualDim, 1>;
 using ResMat = Eigen::Matrix<Scalar, kMaxResidualDim, kMaxResidualDim>;
 using JacMat = Eigen::Matrix<Scalar, kMaxResidualDim, kMaxStateDof>;
 
-/// C++17 uyumlu tahsissiz gorunum. std::span C++20 oldugu icin kullanilmaz (R8).
+/// C++17 uyumlu tahsissiz gorunum. C++20'nin span tipi kullanilmaz (R8);
+/// gorunum gerekiyorsa bu sinif kullanilir.
 template <typename T>
 class ArrayView {
-public:
+ public:
   constexpr ArrayView() = default;
-  constexpr ArrayView(const T *data, std::size_t size) : data_(data), size_(size) {}
+  constexpr ArrayView(const T* data, std::size_t size) : data_(data), size_(size) {}
 
-  constexpr const T *data() const { return data_; }
+  constexpr const T* data() const { return data_; }
   constexpr std::size_t size() const { return size_; }
   constexpr bool empty() const { return size_ == 0; }
-  constexpr const T &operator[](std::size_t i) const { return data_[i]; }
-  constexpr const T *begin() const { return data_; }
-  constexpr const T *end() const { return data_ + size_; }
+  constexpr const T& operator[](std::size_t i) const { return data_[i]; }
+  constexpr const T* begin() const { return data_; }
+  constexpr const T* end() const { return data_ + size_; }
 
-private:
-  const T *data_ = nullptr;
+ private:
+  const T* data_ = nullptr;
   std::size_t size_ = 0;
 };
 
