@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace kerteriz::measurements {
@@ -115,8 +116,43 @@ inline std::vector<std::string_view> duplicate_config_names(const Registry& reg)
   return cift;
 }
 
+namespace detail {
+
+/// Tip TAM mi (yalnizca ileri bildirilmis degil mi)?
+///
+/// `sizeof` eksik tip icin gecersizdir; SFINAE ile yakalanir. `sizeof(T) > 0`
+/// YAZILMAZ: sabit ile karsilastirma clang-tidy'nin bugprone-sizeof-expression
+/// kontrolunu tetikler ve hakli olarak — o kalip genellikle gercek bir hatadir.
+template <typename T, typename = void>
+struct IsCompleteType : std::false_type {};
+
+template <typename T>
+struct IsCompleteType<T, decltype(void(sizeof(T)))> : std::true_type {};
+
+} // namespace detail
+
 /// Makrolarin kullandigi kayit nesneleri. Kurucu kayit yapar.
+///
+/// TIP PARAMETRESI KASITLIDIR. Makro yalnizca `#Type` ile metin uretseydi,
+/// kaydedilen ad gercek bir tipe karsilik gelmek ZORUNDA olmazdi: iki tarafta
+/// ayni yazim hatasi yapilmasi (olcum ve testi `GnssPositon` olarak kaydetmek)
+/// hicbir `GnssPositon` tipi olmadan Denetim (4)'u gecirirdi. Registrar tip
+/// parametresi aldigi icin boyle bir kayit DERLENMEZ.
+///
+/// `sizeof` tam tip zorunlulugu getirir; yalnizca ileri bildirilmis bir sinif
+/// da yetmez. Faz 1'de fabrika geri cagrisi eklendiginde `Type`, `Measurement`
+/// turevi olma zorunlulugu ile de sinirlanacaktir; bugun boyle bir taban
+/// sinif YOKTUR, o yuzden uydurulmaz.
+///
+/// KALAN SINIR: olcum ile testin ESLESMESI hala `type_name` metni uzerinden
+/// yapilir. Iki farkli ad alanindaki AYNI yazimli iki tip birbirinin testine
+/// eslesebilir. Bugun bunu kapatmak eslesme olcutunu degistirmeyi gerektirir
+/// (tip kimligi anahtari); S10 kapsaminda degildir. Yazim hatasi sinifi —
+/// asil delik — tip parametresiyle kapatilmistir.
+template <typename Type>
 class MeasurementRegistrar {
+  static_assert(detail::IsCompleteType<Type>::value, "kayit TAM bir tip gerektirir");
+
  public:
   MeasurementRegistrar(std::string_view type_name, std::string_view config_name, const char* file,
                        int line) {
@@ -124,7 +160,10 @@ class MeasurementRegistrar {
   }
 };
 
+template <typename Type>
 class JacobianTestRegistrar {
+  static_assert(detail::IsCompleteType<Type>::value, "kayit TAM bir tip gerektirir");
+
  public:
   JacobianTestRegistrar(std::string_view type_name, JacobianTestFn run, const char* file,
                         int line) {
@@ -134,12 +173,24 @@ class JacobianTestRegistrar {
 
 } // namespace kerteriz::measurements
 
+/// Makro ici benzersiz ad uretimi.
+///
+/// Ad artik `Type`'tan TURETILEMEZ: `Type` gercek bir tip ifadesidir ve
+/// nitelikli olabilir (`kerteriz::test_fakes::SahteGnss`); `::` bir
+/// tanimlayicida yer alamaz. Bu yuzden satir numarasi kullanilir. Tek bir
+/// makro genislemesi icindeki tum `__LINE__` gecisleri ayni degeri verir,
+/// dolayisiyla beyan ile tanim ayni ada cozulur.
+#define KERTERIZ_BIRLESTIR_ICSEL(a, b) a##b
+#define KERTERIZ_BIRLESTIR(a, b) KERTERIZ_BIRLESTIR_ICSEL(a, b)
+
 /// Bir olcum tipini fabrikaya kaydeder (INTERFACES §3).
 /// Olcum sinifinin yanina, kendi ceviri biriminde yazilir.
+///
+/// `Type` GERCEK BIR TIP olmalidir; kapsamda cozulmezse derleme duser.
 #define KERTERIZ_REGISTER_MEASUREMENT(Type, ConfigName)                                            \
   namespace {                                                                                      \
-  const ::kerteriz::measurements::MeasurementRegistrar kerteriz_olcum_kaydi_##Type{                \
-      #Type, ConfigName, __FILE__, __LINE__};                                                      \
+  const ::kerteriz::measurements::MeasurementRegistrar<Type>                                       \
+      KERTERIZ_BIRLESTIR(kerteriz_olcum_kaydi_, __LINE__){#Type, ConfigName, __FILE__, __LINE__};  \
   }                                                                                                \
   static_assert(true, "noktali virgul ile bitir")
 
@@ -157,10 +208,12 @@ class JacobianTestRegistrar {
 ///
 /// Govde gtest makrolari kullanabilir; registry gtest'i TANIMAZ. Testler
 /// denetim testi icinde cagrilir, bu yuzden EXPECT_*/ASSERT_* dogru raporlanir.
+/// `Type` burada da GERCEK BIR TIPTIR — kayit ile test ayni tipe baglanir.
 #define KERTERIZ_REGISTER_JACOBIAN_TEST(Type)                                                      \
-  static void kerteriz_jacobian_testi_##Type();                                                    \
+  static void KERTERIZ_BIRLESTIR(kerteriz_jacobian_testi_, __LINE__)();                            \
   namespace {                                                                                      \
-  const ::kerteriz::measurements::JacobianTestRegistrar kerteriz_jacobian_kaydi_##Type{            \
-      #Type, &kerteriz_jacobian_testi_##Type, __FILE__, __LINE__};                                 \
+  const ::kerteriz::measurements::JacobianTestRegistrar<Type>                                      \
+      KERTERIZ_BIRLESTIR(kerteriz_jacobian_kaydi_, __LINE__){                                      \
+          #Type, &KERTERIZ_BIRLESTIR(kerteriz_jacobian_testi_, __LINE__), __FILE__, __LINE__};     \
   }                                                                                                \
-  static void kerteriz_jacobian_testi_##Type()
+  static void KERTERIZ_BIRLESTIR(kerteriz_jacobian_testi_, __LINE__)()
