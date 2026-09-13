@@ -14,6 +14,6 @@ setup(
     zip_safe=True,
     maintainer="Kerteriz",
     maintainer_email="tokelifw@gmail.com",
-    description="Kerteriz degerlendirme araclari",
+    description="Degerlendirme: evo sarmalayici, NEES/NIS, Stanford diyagrami, rapor.",
     license="MIT",
 )
