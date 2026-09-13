@@ -43,36 +43,50 @@ Kendi kendine yeten tam tanım: [`docs/SPEC.md`](docs/SPEC.md)
 
 <!-- Her faz geçişinde GÜNCELLE. Ajan buraya bakıp kapsamı belirliyor. -->
 
-**Aktif faz:** FAZ 0 — Temel ve iskelet · **Hafta:** 1–2
+**Aktif faz:** FAZ 1 — ESKF · **Hafta:** 3–5
 
-**Kapsam içi:**
-- Repo iskeleti, CMake hedefleri, colcon yapısı
-- Docker imajı (`ros:humble-ros-base`) + devcontainer
-- GitHub Actions: Humble + Jazzy matrisi, build/test/lint
-- manif entegrasyonu, SE₂(3) exp/log/adjoint birim testleri
-- `ArrayView`, sabit kapasiteli tipler, `numeric_residual_jacobian`
-- **Minimal deterministik yörünge/sensör üreteci** — tohumlu, tekrarlanabilir (R6'nın ön koşulu)
-- **Beş otomatik denetim** (§6.1)
-- ADR-1 ve ADR-2'nin ayrı dosyaya yazılması
+**Kapsam içi** (`PHASE0.md` §6 devri ve `SPEC.md` §5 Faz 1 satırından):
+- `NavState` — 15-DoF sabit çekirdek, sınırlı kapasiteli augmentation (INTERFACES §1)
+- `ImuPropagator` — IMU yayılımı (INTERFACES §2)
+- `EskfBackend` — Faz 0'ın `linear_update`'i üzerine (INTERFACES §4)
+- Ölçüm modelleri: `GnssPosition`, `GnssVelocity`, `WheelVelocity`, `NonHolonomic`, `ZeroVelocity`
+- **Sentetik smoke test** — R6 gereği gerçek veriden ÖNCE
+- `MeasurementBuffer` + `Estimator` (INTERFACES §5)
+- Veri seti adaptörleri (KITTI, NCLT) ve `robot_localization` kıyası
+
+**Sıra** (`PHASE0.md` §6'da yazılı):
+`NavState` → `ImuPropagator` → `EskfBackend` → `GnssPosition` → **sentetik smoke test** →
+`MeasurementBuffer` + `Estimator` → veri seti adaptörleri → `robot_localization` kıyası
+
+Faz 1'de `EskfBackend`, Faz 0'ın üç çıktısına dayanır: `linear_update`
+(güncelleme matematiği test edilmiş), `numeric_residual_jacobian` (ilk `Measurement`'ın
+Jacobian'ı gün içinde doğrulanır), `kerteriz_sim` (sentetik veri hazır).
 
 **Kapsam dışı (şimdi yazma):**
-- Herhangi bir filtre backend'i (ESKF dahil) — Faz 1
-- Ölçüm modelleri — Faz 1
-- `Estimator` orkestratörü, `MeasurementBuffer` — Faz 1
-- Monte Carlo, NEES analizi, evo — Faz 2
+- Monte Carlo, NEES analizi, evo, otomatik rapor — Faz 2
 - InEKF — Faz 3 · Klonlama, teker kalibrasyonu — Faz 3
 - FDI, protection level ve `WeakDirection`'ın **çalışma anındaki kullanımı** — Faz 4.
-  `WeakDirection` ortak veri tipi olarak S5'te tanımlanır (INTERFACES §0).
+  `WeakDirection` ortak veri tipi olarak Faz 0 S5'te tanımlandı (INTERFACES §0).
 
-**Faz tamamlandı sayılır:**
-- [ ] `colcon build` temiz geçiyor
-- [ ] CI Humble ve Jazzy'de yeşil
-- [ ] `docker build` + `docker run` tek komutta çalışıyor
-- [ ] SE₂(3) testleri geçiyor (`Exp(Log(X))==X`, `X ⊞ (Y ⊟ X)==Y`)
-- [ ] **Kapalı formlu lineer-Gauss testi geçiyor** — `J_res` işaretini koruyan test
-- [ ] Üreteç aynı tohumla bit-bit aynı çıktıyı veriyor
-- [ ] Beş otomatik denetim CI'da zorunlu
-- [ ] ADR-1, ADR-2 yazılmış
+**Faz tamamlandı sayılır** (`SPEC.md` §5):
+- [ ] Sentetik veride ESKF yakınsıyor ve NIS makul — **gerçek veriye geçiş ön koşulu**
+- [ ] KITTI'de `robot_localization` ile denk ATE
+- [ ] Tüm Jacobian testleri geçiyor (Denetim ④ kayıtlı her ölçüm için)
+- [ ] Repo paylaşılabilir (MVP)
+
+### Faz 0 — kapandı (`v0.1.0`)
+
+- [x] `colcon build` temiz geçiyor
+- [x] CI Humble ve Jazzy'de yeşil
+- [x] `docker build` + `docker run` tek komutta çalışıyor
+- [x] SE₂(3) testleri geçiyor (`Exp(Log(X))==X`, `X ⊞ (Y ⊟ X)==Y`)
+- [x] **Kapalı formlu lineer-Gauss testi geçiyor** — `J_res` işaretini koruyan test
+- [x] Üreteç aynı tohumla bit-bit aynı çıktıyı veriyor
+- [x] Beş otomatik denetim CI'da zorunlu
+- [x] ADR-1, ADR-2 yazılmış
+
+Faz 0 çıktıları: `types.hpp`, `state/lie.hpp`, `util/numeric_residual_jacobian.hpp`,
+`util/linear_update.hpp`, `measurements/registry.hpp`, `kerteriz_sim`.
 
 ---
 
@@ -104,7 +118,7 @@ results/           üretilmiş şekil ve tablolar (commit'lenir)
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | Yeni platform/sensör desteği ekliyorsan |
 | [`docs/design/DECISIONS.md`](docs/design/DECISIONS.md) | "Neden böyle yapılmış?" |
 | [`docs/AI-HANDOFF.md`](docs/AI-HANDOFF.md) | İşi başka bir ajana devrediyorsan |
-| [`docs/PHASE0.md`](docs/PHASE0.md) | **Aktif faz planı** — adım sırası, dosya listesi, DoD |
+| [`docs/PHASE0.md`](docs/PHASE0.md) | Faz 0 planı — tamamlandı; §6 Faz 1 devrini tarif eder |
 
 ---
 
