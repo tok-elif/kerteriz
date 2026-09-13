@@ -127,11 +127,24 @@ def dokumani_tara() -> tuple[list[str], list[Bolge]]:
                 cit_icinde = not cit_icinde
 
             if not cit_icinde and MUAF_SATIR in satir:
-                sebep = satir.split(MUAF_SATIR, 1)[1].split("-->", 1)[0].strip()
+                once, kalan = satir.split(MUAF_SATIR, 1)
+                if "-->" not in kalan:
+                    ihlaller.append(
+                        f"{yol}:{no}: satir ici muafiyet isaretcisi kapatilmamis ('-->' yok)"
+                    )
+                    continue
+                sebep, sonra = kalan.split("-->", 1)
+                sebep = sebep.strip()
                 if not sebep:
                     ihlaller.append(f"{yol}:{no}: satir ici muafiyet sebepsiz")
+
+                # ISARETCININ KENDISI TARANMAZ. Sebep metni zaten kapsadigi
+                # sembolleri adiyla sayar (allowlist kurali); isaretci de
+                # taransaydi her muafiyet kendi sebebiyle "dolu" gorunur,
+                # bos-muafiyet kurali islemez ve yalnizca isaretcide gecen bir
+                # sembol icin acilmis muafiyet sahiden dolu sanilirdi.
                 b = Bolge(dosya=yol, basla=no, bitir=no, sebep=sebep, satir_ici=True)
-                b.yakalanan.extend(bulunan_semboller(satir))
+                b.yakalanan.extend(bulunan_semboller(once + sonra))
                 tum_bolgeler.append(b)
                 continue
 
