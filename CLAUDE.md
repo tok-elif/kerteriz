@@ -61,7 +61,8 @@ Kendi kendine yeten tam tanım: [`docs/SPEC.md`](docs/SPEC.md)
 - `Estimator` orkestratörü, `MeasurementBuffer` — Faz 1
 - Monte Carlo, NEES analizi, evo — Faz 2
 - InEKF — Faz 3 · Klonlama, teker kalibrasyonu — Faz 3
-- FDI, protection level, `WeakDirection` — Faz 4
+- FDI, protection level ve `WeakDirection`'ın **çalışma anındaki kullanımı** — Faz 4.
+  `WeakDirection` ortak veri tipi olarak S5'te tanımlanır (INTERFACES §0).
 
 **Faz tamamlandı sayılır:**
 - [ ] `colcon build` temiz geçiyor

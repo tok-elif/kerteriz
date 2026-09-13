@@ -130,8 +130,14 @@ jobs:
   # ---------------------------------------------------------------------------
   # checks — CLAUDE.md §6.1 denetimleri
   #
-  # ① ve ⑤ burada zorlanır. ②, ③, ④ henüz YOK:
-  #     ② durum kapasitesi static_assert'i  -> S5 ile gelir
+  # ① ve ⑤ burada zorlanır.
+  #
+  # ② (durum kapasitesi) S5'te geldi ve DERLEME ZAMANINDA zorlanır:
+  # types.hpp içindeki static_assert'ler. Ayrı bir adım gerekmez — kapasite
+  # bozulursa build-test ve core-standalone işleri derlenmez. Denetimin
+  # kayıt sırasındaki yarısı NavState ile (Faz 1) gelecek.
+  #
+  # ③ ve ④ henüz YOK:
   #     ③ J_res işareti, kapalı formlu test -> S8 ile gelir
   #     ④ Jacobian testi registry'si        -> S10 ile gelir
   # Bu iş, o adımlar geldikçe genişletilecektir. Sahte "geçti" üretmemek için
