@@ -109,6 +109,13 @@ message(STATUS "kerteriz_core: manif hedefi = ${KERTERIZ_MANIF_LINK}")
 add_library(kerteriz_core INTERFACE)
 add_library(kerteriz::core ALIAS kerteriz_core)
 
+# Kurulu export'taki ad build agacindaki ALIAS ile AYNI olmalidir.
+# EXPORT_NAME olmadan install(EXPORT ... NAMESPACE kerteriz::) hedefi
+# `kerteriz::kerteriz_core` diye disa yazar; tuketiciler ise `kerteriz::core`
+# bekler. Fark yalnizca hedefi GERCEKTEN linkleyen ilk tuketicide patlar —
+# find_package'in tek basina gecmesi bunu gizler.
+set_target_properties(kerteriz_core PROPERTIES EXPORT_NAME core)
+
 target_include_directories(kerteriz_core INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)

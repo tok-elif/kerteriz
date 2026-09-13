@@ -57,6 +57,50 @@ jobs:
           colcon test --event-handlers console_direct-
           colcon test-result --all --verbose
 
+      # "0 test, 0 hata" YEŞİL görünür. Bu adım testlerin gerçekten keşfedilip
+      # koşturulduğunu doğrular.
+      #
+      # Somut sebep: BUILD_TESTING global bir addır; bir bağımlılık veya üst
+      # proje onu kapatırsa test hedefleri hiç kaydolmaz ve CI yine yeşil olur.
+      # kerteriz_core bir dönem tam olarak bunu yapıyordu (bkz. CMakeLists
+      # içindeki cache sızıntısı notu). kerteriz_eval'da da benzer bir
+      # maskelenme yaşandı: Humble 0 testle sessizce geçiyordu.
+      #
+      # NOT: kerteriz_eval `colcon test-result`'a satır üretmiyor (unittest
+      # yolu), bu yüzden burada sayılamıyor. Onun koruması ayrı: pytest/unittest
+      # hiç test bulamazsa Jazzy exit 5 döndürür ve iş zaten kırmızı olur.
+      - name: Testler gerçekten koştu mu
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re, subprocess, sys
+          from collections import defaultdict
+
+          beklenen = {"kerteriz_core": 1, "kerteriz_sim": 1, "kerteriz_ros": 1}
+
+          cikti = subprocess.run(["colcon", "test-result", "--all"],
+                                 capture_output=True, text=True).stdout
+          sayim = defaultdict(int)
+          for satir in cikti.splitlines():
+              m = re.match(r"build/([^/]+)/.*?:\s*(\d+) tests?,", satir)
+              if m:
+                  sayim[m.group(1)] += int(m.group(2))
+
+          hata = False
+          for paket, en_az in sorted(beklenen.items()):
+              n = sayim.get(paket, 0)
+              damga = "OK" if n >= en_az else "HATA"
+              print(f"  {damga}  {paket}: {n} test (en az {en_az})")
+              if n < en_az:
+                  hata = True
+
+          if hata:
+              print("\nTestler koşmadı. BUILD_TESTING veya bir test hedefi "
+                    "sessizce kapanmış olabilir.")
+              sys.exit(1)
+          print("\nTüm beklenen paketler test koşturdu.")
+          PY
+
   # ---------------------------------------------------------------------------
   # R1 / ADR-1: kerteriz_core ROS kurulu OLMAYAN makinede derlenir.
   # ROS sürülmeyen bir runner'da düz CMake ile kurulur ve test edilir.
