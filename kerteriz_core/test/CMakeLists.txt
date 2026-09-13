@@ -30,3 +30,15 @@ add_test(NAME test_numeric_residual_jacobian COMMAND test_numeric_residual_jacob
 add_executable(test_linear_update test_linear_update.cpp)
 target_link_libraries(test_linear_update PRIVATE kerteriz::core GTest::gtest_main)
 add_test(NAME test_linear_update COMMAND test_linear_update)
+
+# S10 — olcum registry'si ve Denetim (4).
+#
+# Iki ceviri birimi KASTEN ayridir: fabrika kaydi fake_measurements.cpp'de,
+# Jacobian testleri test dosyasinda. Denetim ancak ikisi ayni binary'de
+# bulustugunda anlamlidir.
+add_executable(test_measurement_registry
+  test_measurement_registry.cpp
+  fake_measurements.cpp)
+target_include_directories(test_measurement_registry PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_measurement_registry PRIVATE kerteriz::core GTest::gtest_main)
+add_test(NAME test_measurement_registry COMMAND test_measurement_registry)
