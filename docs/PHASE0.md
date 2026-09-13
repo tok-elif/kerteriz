@@ -293,12 +293,25 @@ Kayıtlı testler ayrıca **çağrılır**; yalnızca varlıklarını saymak kay
 
 `tools/check_docs.py` — bu oturumda iki kez elle yakalanan hatayı otomatikleştirir.
 
-Yasaklı semboller: `MatX H`, `struct Residual`, `MatX noise`, `CompositeState<`,
-`EuclideanBlock`, `reset(const NavState`, `IntegrityState integrity`, `.inverse()`, `std::span`
+Yasaklı semboller: `MatX H`, `struct Residual`, `MatX noise`, `CompositeState<`, <!-- denetim5:muaf-satir MatX H struct Residual MatX noise CompositeState< — S11 in kendi yasakli sembol listesi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
+`EuclideanBlock`, `reset(const NavState`, `IntegrityState integrity`, `.inverse()`, `std::span` <!-- denetim5:muaf-satir EuclideanBlock reset(const NavState IntegrityState integrity .inverse() std::span — S11 in kendi yasakli sembol listesi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 — `.md` ve `.hpp`/`.cpp` dosyalarında.
 
-Hariç tutulanlar: "kullanılmaz / yasak / yazma" uyarı satırları; `DECISIONS.md`'nin
-ADR-1…12 tarihsel bloğu.
+Hariç tutulanlar — "bunu yapma" uyarıları ve tarihsel ADR metni — **açık işaretlemeyle**
+verilir. Uygulamada anahtar kelime sezgiseli ("satırda *yasak* geçiyorsa geç") kasten
+kullanılmadı: gerçek bir drift o kelimeyi taşıyan bir satıra düşebilir ve sessizce geçerdi.
+
+```
+<!-- denetim5:muaf <semboller> — <sebep> -->   ... blok ...   <!-- denetim5:muaf-son -->
+| tablo satırı | ... | <!-- denetim5:muaf-satir <semboller> — <sebep> -->
+```
+
+Satır içi biçim tablolar içindir: kendi satırında bir HTML yorumu tabloyu bölerdi.
+
+Muafiyet bir **allowlist**'tir, blanket değil. İki kural bunu korur: hiçbir yasaklı sembol
+yakalamayan muafiyet **hatadır** (metin taşınmış, muafiyet unutulmuş), ve sebep metni
+yakaladığı **her sembolü adıyla saymak zorundadır**. Kod bloğu gibi işaretçinin ancak
+dışına konabildiği yerlerde muafiyeti dar tutan tek şey budur.
 
 **DoD:** script CI'da; kasıtlı bir ihlal eklendiğinde düşüyor.
 

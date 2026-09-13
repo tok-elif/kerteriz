@@ -98,7 +98,7 @@ tercih değil:
 | Durum | 15-DoF sabit çekirdek + sınırlı kapasiteli augmentation (`PersistentCalibration` \| `Clone`) |
 | Geri sarma | `PipelineSnapshot` sahibi `Estimator`; backend yalnız `BackendSnapshot` taşır. Replay'i etkileyen *tüm* mutable state dahil (ADR-15,20) |
 | Tahsis | Sayısal hot path (`predict/update/evaluate`) tahsissiz; değerle dinamik matris dönülmez. Kuyruk sahipliği bu sınırın dışındadır (ADR-22) |
-| Kovaryans | Joseph formu + simetrizasyon **zorunlu**; `S.inverse()` yasak, `LDLT` ile çözülür |
+| Kovaryans | Joseph formu + simetrizasyon **zorunlu**; `S.inverse()` yasak, `LDLT` ile çözülür <!-- denetim5:muaf-satir .inverse() — kovaryans kurali; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez --> |
 | Başlatma | `EstimatorMode` (sistem) ≠ `SensorHealth` (tek sensör) |
 | Red sebebi | `UpdateResult` (filtre) ≠ `ProcessingResult` + `RejectReason` (ardışık düzen) |
 | InEKF iddiası | Exact group-affine/log-linear avantaj bias'sız SE₂(3) çekirdeğine aittir; genişletilmiş durumun tutarlılığı varsayılmaz, NEES/NIS ile ölçülür (ADR-21) |
