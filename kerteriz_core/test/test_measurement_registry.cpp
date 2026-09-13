@@ -29,8 +29,23 @@ using kerteriz::measurements::global_registry;
 using kerteriz::measurements::jacobian_tests_without_measurement;
 using kerteriz::measurements::measurements_without_jacobian_test;
 using kerteriz::measurements::Registry;
+using kerteriz::measurements::type_id;
 using kerteriz::test_fakes::SahteGnss;
 using kerteriz::test_fakes::SahteTeker;
+
+/// Yerel defter testleri icin tip kimligi tasiyicilari. Icerikleri onemsiz;
+/// onemli olan FARKLI tipler olmalari.
+struct TipA {};
+struct TipB {};
+
+/// Ayni yazimli, farkli ad alanlarinda iki GERCEK tip. Metin uzerinden
+/// eslestirme bunlari birbirine karistirirdi.
+namespace ad_alani_bir {
+struct AyniIsim {};
+} // namespace ad_alani_bir
+namespace ad_alani_iki {
+struct AyniIsim {};
+} // namespace ad_alani_iki
 
 SE23 ornek_durum() {
   TangentVec d;
@@ -83,7 +98,7 @@ KERTERIZ_REGISTER_JACOBIAN_TEST(SahteTeker) { jacobian_karsilastir<SahteTeker>()
 TEST(MeasurementRegistry, DenetimTestsizOlcumuYakalar) {
   // S10 DoD: sahte bir olcum tipiyle mekanizma dogrulanir.
   Registry yerel;
-  yerel.add_measurement({"SahteTestsiz", "sahte_testsiz", __FILE__, __LINE__});
+  yerel.add_measurement({type_id<TipA>(), "SahteTestsiz", "sahte_testsiz", __FILE__, __LINE__});
 
   const auto eksik = measurements_without_jacobian_test(yerel);
   ASSERT_EQ(eksik.size(), 1U) << "testsiz olcum yakalanmadi";
@@ -92,20 +107,20 @@ TEST(MeasurementRegistry, DenetimTestsizOlcumuYakalar) {
 
 TEST(MeasurementRegistry, TestKaydedilinceDenetimTemizlenir) {
   Registry yerel;
-  yerel.add_measurement({"SahteTestli", "sahte_testli", __FILE__, __LINE__});
+  yerel.add_measurement({type_id<TipA>(), "SahteTestli", "sahte_testli", __FILE__, __LINE__});
   ASSERT_EQ(measurements_without_jacobian_test(yerel).size(), 1U);
 
-  yerel.add_jacobian_test({"SahteTestli", nullptr, __FILE__, __LINE__});
+  yerel.add_jacobian_test({type_id<TipA>(), "SahteTestli", nullptr, __FILE__, __LINE__});
   EXPECT_TRUE(measurements_without_jacobian_test(yerel).empty())
       << "test kaydedildi ama denetim hala ihlal bildiriyor";
 }
 
-TEST(MeasurementRegistry, YazimHatasiOlanTestAdiYakalanir) {
+TEST(MeasurementRegistry, BaskaTipeKaydedilmisTestYakalanir) {
   // Iki liste de TEK BASINA bakildiginda doludur: bir olcum var, bir test var.
   // Esleme ise tutmaz. Denetim yalnizca sayilara baksaydi bunu kacirirdi.
   Registry yerel;
-  yerel.add_measurement({"GnssPosition", "gnss_position", __FILE__, __LINE__});
-  yerel.add_jacobian_test({"GnssPositon", nullptr, __FILE__, __LINE__});
+  yerel.add_measurement({type_id<TipA>(), "GnssPosition", "gnss_position", __FILE__, __LINE__});
+  yerel.add_jacobian_test({type_id<TipB>(), "GnssVelocity", nullptr, __FILE__, __LINE__});
 
   ASSERT_FALSE(yerel.measurements().empty());
   ASSERT_FALSE(yerel.jacobian_tests().empty());
@@ -116,13 +131,47 @@ TEST(MeasurementRegistry, YazimHatasiOlanTestAdiYakalanir) {
 
   const auto sahipsiz = jacobian_tests_without_measurement(yerel);
   ASSERT_EQ(sahipsiz.size(), 1U);
-  EXPECT_EQ(sahipsiz[0], "GnssPositon");
+  EXPECT_EQ(sahipsiz[0], "GnssVelocity");
+}
+
+TEST(MeasurementRegistry, AyniYazimFarkliAdAlaniESLESMEZ) {
+  // Metin uzerinden eslestirme bunu YANLIS gecirirdi: iki kayit da "AyniIsim"
+  // etiketini tasiyor, ama tipler farkli. Denetim ikisini de ihlal saymali.
+  Registry yerel;
+  yerel.add_measurement(
+      {type_id<ad_alani_bir::AyniIsim>(), "AyniIsim", "birinci", __FILE__, __LINE__});
+  yerel.add_jacobian_test(
+      {type_id<ad_alani_iki::AyniIsim>(), "AyniIsim", nullptr, __FILE__, __LINE__});
+
+  ASSERT_NE(type_id<ad_alani_bir::AyniIsim>(), type_id<ad_alani_iki::AyniIsim>())
+      << "tip kimligi ayirt edemiyor";
+
+  EXPECT_EQ(measurements_without_jacobian_test(yerel).size(), 1U)
+      << "ayni yazimli farkli tip yanlislikla eslesti";
+  EXPECT_EQ(jacobian_tests_without_measurement(yerel).size(), 1U)
+      << "ayni yazimli farkli tip yanlislikla eslesti";
+}
+
+TEST(MeasurementRegistry, AyniTipFarkliYazimlarlaESLESIR) {
+  // Metin uzerinden eslestirme bunu YANLIS DUSURURDU: ayni gercek tip, biri
+  // nitelikli biri niteliksiz yazilmis. Anahtar tipin kendisi oldugu icin
+  // yazim farki onemsizdir.
+  Registry yerel;
+  yerel.add_measurement(
+      {type_id<ad_alani_bir::AyniIsim>(), "ad_alani_bir::AyniIsim", "tek", __FILE__, __LINE__});
+  yerel.add_jacobian_test(
+      {type_id<ad_alani_bir::AyniIsim>(), "AyniIsim", nullptr, __FILE__, __LINE__});
+
+  EXPECT_TRUE(measurements_without_jacobian_test(yerel).empty())
+      << "ayni tip farkli yazildi diye eslesemedi";
+  EXPECT_TRUE(jacobian_tests_without_measurement(yerel).empty())
+      << "ayni tip farkli yazildi diye eslesemedi";
 }
 
 TEST(MeasurementRegistry, AyniYamlAdiniIkiTipTalepEdemez) {
   Registry yerel;
-  yerel.add_measurement({"Birinci", "gnss_position", __FILE__, __LINE__});
-  yerel.add_measurement({"Ikinci", "gnss_position", __FILE__, __LINE__});
+  yerel.add_measurement({type_id<TipA>(), "Birinci", "gnss_position", __FILE__, __LINE__});
+  yerel.add_measurement({type_id<TipB>(), "Ikinci", "gnss_position", __FILE__, __LINE__});
 
   const auto cift = duplicate_config_names(yerel);
   ASSERT_EQ(cift.size(), 1U) << "fabrika anahtari cakismasi yakalanmadi";

@@ -22,9 +22,36 @@
 
 namespace kerteriz::measurements {
 
+namespace detail {
+
+/// Tip basina benzersiz bir nesne. `inline` oldugu icin tum ceviri
+/// birimlerinde TEK varliktir, dolayisiyla adresi tipin kimligidir.
+template <typename T>
+struct TypeKey {
+  static inline const char anchor = 0;
+};
+
+} // namespace detail
+
+/// Tip kimligi. RTTI GEREKTIRMEZ; `typeid` yerine adres kullanilir, boylece
+/// -fno-rtti ile de calisir ve karsilastirma tek isaretci kiyasidir.
+using TypeId = const void*;
+
+template <typename T>
+inline TypeId type_id() {
+  return &detail::TypeKey<T>::anchor;
+}
+
 /// Bir olcum tipinin kaydi.
+///
+/// ESLESME ANAHTARI `type_id`'dir, `type_name` DEGILDIR. Metin uzerinden
+/// eslestirmek iki yonde birden yanlistir: farkli ad alanlarindaki ayni
+/// yazimli iki tip birbirinin testine eslesir, ayni tipin nitelikli ve
+/// niteliksiz yazimlari ise birbirinden ayrisir. `type_name` yalnizca
+/// TESHIS ETIKETIDIR — hata mesajlarinda okunur, karsilastirmada kullanilmaz.
 struct MeasurementEntry {
-  std::string_view type_name;   ///< C++ tip adi, makronun urettigi metin
+  TypeId type_id = nullptr;     ///< eslesme anahtari
+  std::string_view type_name;   ///< yalnizca teshis etiketi
   std::string_view config_name; ///< YAML'daki sensor adi (INTERFACES §3, ADR-2)
   const char* file = nullptr;
   int line = 0;
@@ -35,7 +62,8 @@ struct MeasurementEntry {
 using JacobianTestFn = void (*)();
 
 struct JacobianTestEntry {
-  std::string_view type_name;
+  TypeId type_id = nullptr;   ///< eslesme anahtari
+  std::string_view type_name; ///< yalnizca teshis etiketi
   JacobianTestFn run = nullptr;
   const char* file = nullptr;
   int line = 0;
@@ -75,7 +103,7 @@ inline std::vector<std::string_view> measurements_without_jacobian_test(const Re
   for (const auto& olcum : reg.measurements()) {
     const auto& testler = reg.jacobian_tests();
     const bool var = std::any_of(testler.begin(), testler.end(), [&](const JacobianTestEntry& t) {
-      return t.type_name == olcum.type_name;
+      return t.type_id == olcum.type_id;
     });
     if (!var) {
       eksik.push_back(olcum.type_name);
@@ -93,7 +121,7 @@ inline std::vector<std::string_view> jacobian_tests_without_measurement(const Re
   for (const auto& test : reg.jacobian_tests()) {
     const auto& olcumler = reg.measurements();
     const bool var = std::any_of(olcumler.begin(), olcumler.end(), [&](const MeasurementEntry& m) {
-      return m.type_name == test.type_name;
+      return m.type_id == test.type_id;
     });
     if (!var) {
       sahipsiz.push_back(test.type_name);
@@ -144,11 +172,9 @@ struct IsCompleteType<T, decltype(void(sizeof(T)))> : std::true_type {};
 /// turevi olma zorunlulugu ile de sinirlanacaktir; bugun boyle bir taban
 /// sinif YOKTUR, o yuzden uydurulmaz.
 ///
-/// KALAN SINIR: olcum ile testin ESLESMESI hala `type_name` metni uzerinden
-/// yapilir. Iki farkli ad alanindaki AYNI yazimli iki tip birbirinin testine
-/// eslesebilir. Bugun bunu kapatmak eslesme olcutunu degistirmeyi gerektirir
-/// (tip kimligi anahtari); S10 kapsaminda degildir. Yazim hatasi sinifi —
-/// asil delik — tip parametresiyle kapatilmistir.
+/// Eslesme `type_id<Type>()` uzerinden yapilir, metin uzerinden degil
+/// (bkz. MeasurementEntry). Tip parametresi hem adin gercek bir tipe
+/// cozulmesini zorunlu kilar hem de anahtarin uretilebilmesini saglar.
 template <typename Type>
 class MeasurementRegistrar {
   static_assert(detail::IsCompleteType<Type>::value, "kayit TAM bir tip gerektirir");
@@ -156,7 +182,7 @@ class MeasurementRegistrar {
  public:
   MeasurementRegistrar(std::string_view type_name, std::string_view config_name, const char* file,
                        int line) {
-    global_registry().add_measurement({type_name, config_name, file, line});
+    global_registry().add_measurement({type_id<Type>(), type_name, config_name, file, line});
   }
 };
 
@@ -167,7 +193,7 @@ class JacobianTestRegistrar {
  public:
   JacobianTestRegistrar(std::string_view type_name, JacobianTestFn run, const char* file,
                         int line) {
-    global_registry().add_jacobian_test({type_name, run, file, line});
+    global_registry().add_jacobian_test({type_id<Type>(), type_name, run, file, line});
   }
 };
 
