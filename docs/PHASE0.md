@@ -294,8 +294,9 @@ Kayıtlı testler ayrıca **çağrılır**; yalnızca varlıklarını saymak kay
 `tools/check_docs.py` — bu oturumda iki kez elle yakalanan hatayı otomatikleştirir.
 
 Yasaklı semboller: `MatX H`, `struct Residual`, `MatX noise`, `CompositeState<`, <!-- denetim5:muaf-satir MatX H struct Residual MatX noise CompositeState< — S11 in kendi yasakli sembol listesi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
-`EuclideanBlock`, `reset(const NavState`, `IntegrityState integrity`, `.inverse()`, `std::span` <!-- denetim5:muaf-satir EuclideanBlock reset(const NavState IntegrityState integrity .inverse() std::span — S11 in kendi yasakli sembol listesi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
-— `.md` ve `.hpp`/`.cpp` dosyalarında.
+`reset(const NavState`, `.inverse()`, `std::span` — `.md` ve `.hpp`/`.cpp` dosyalarında. <!-- denetim5:muaf-satir reset(const NavState .inverse() std::span — S11 in kendi yasakli sembol listesi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
+
+Liste `CLAUDE.md` §6.1'den gelir; yeni mimari yasak burada icat edilmez.
 
 Hariç tutulanlar — "bunu yapma" uyarıları ve tarihsel ADR metni — **açık işaretlemeyle**
 verilir. Uygulamada anahtar kelime sezgiseli ("satırda *yasak* geçiyorsa geç") kasten

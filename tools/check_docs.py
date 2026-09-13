@@ -52,15 +52,15 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 
-# Donmus tasarimin disinda kalan semboller (CLAUDE.md §6.1, PHASE0.md S11).
+# Donmus tasarimin disinda kalan semboller.
+# TEK KAYNAK: CLAUDE.md §6.1 tablosunun 5. satiri. Liste oradan kopyalanir;
+# yeni mimari yasak BURADA icat edilmez.
 YASAKLI_SEMBOLLER = (
     "MatX H",
     "struct Residual",
     "MatX noise",
     "CompositeState<",
-    "EuclideanBlock",
     "reset(const NavState",
-    "IntegrityState integrity",
     ".inverse()",
     "std::span",
 )
