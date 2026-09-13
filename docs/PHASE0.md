@@ -356,16 +356,17 @@ S9–S12 hafifçe taşarsa sorun değil; **S8 taşmamalı.** Taşıyorsa S12'yi 
 
 `CLAUDE.md` §3'teki liste:
 
-- [ ] `colcon build` temiz
-- [ ] CI Humble + Jazzy yeşil
-- [ ] `docker build` + `docker run` tek komut
-- [ ] SE₂(3) testleri geçiyor
-- [ ] **Kapalı formlu lineer-Gauss testi geçiyor**
-- [ ] Üreteç aynı tohumla bit-bit aynı
-- [ ] Beş denetim CI'da zorunlu
-- [ ] ADR-1, ADR-2 ayrı dosyada
+- [x] `colcon build` temiz
+- [x] CI Humble + Jazzy yeşil
+- [x] `docker build` + `docker run` tek komut
+- [x] SE₂(3) testleri geçiyor
+- [x] **Kapalı formlu lineer-Gauss testi geçiyor**
+- [x] Üreteç aynı tohumla bit-bit aynı
+- [x] Beş denetim CI'da zorunlu
+- [x] ADR-1, ADR-2 ayrı dosyada
 
-Hepsi işaretlendiğinde: `CLAUDE.md` §3'ü **Faz 1** olarak güncelle, `v0.1.0` etiketle.
+Sekizi de sağlandı; `CLAUDE.md` §3 **Faz 1** olarak güncellendi. `v0.1.0` etiketi
+kapanış PR'ı `main`'e girdikten sonra atılır.
 
 ---
 

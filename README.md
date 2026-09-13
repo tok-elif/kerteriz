@@ -8,7 +8,7 @@ ROS 2 için çok-sensörlü durum kestirim çerçevesi: kestirim hatasına çal�
 üst sınır (*protection level*) üreten, tutarlılığı Monte Carlo NEES analiziyle doğrulanan,
 SE₂(3) üzerinde değişmez (invariant) EKF tabanlı füzyon.
 
-> **Durum: Faz 0 — iskelet.** Mimari dondurulmuştur (ADR-1…23). Filtre henüz yoktur;
+> **Durum: Faz 0 tamamlandı (`v0.1.0`) — Faz 1 (ESKF) başlıyor.** Mimari dondurulmuştur (ADR-1…23). Filtre henüz yoktur;
 > yol haritası için [`docs/PHASE0.md`](docs/PHASE0.md).
 
 ---
@@ -81,7 +81,7 @@ Bağımlılıklar: Eigen 3.4 (sistem; yoksa indirilir), [manif](https://github.c
 | [`docs/design/DECISIONS.md`](docs/design/DECISIONS.md) | ADR-1…23 — dizin ve henüz bölünmemiş kararlar |
 | [`docs/design/ADR-0001-ros-free-core.md`](docs/design/ADR-0001-ros-free-core.md) | ADR-1 · ROS'suz kestirim çekirdeği |
 | [`docs/design/ADR-0002-se23-state.md`](docs/design/ADR-0002-se23-state.md) | ADR-2 · Durum SE₂(3) × R⁶ üzerinde |
-| [`docs/PHASE0.md`](docs/PHASE0.md) | Aktif faz planı |
+| [`docs/PHASE0.md`](docs/PHASE0.md) | Faz 0 planı — tamamlandı |
 | [`CLAUDE.md`](CLAUDE.md) | Katkıda bulunan ajanlar için kurallar |
 
 ## Lisans
