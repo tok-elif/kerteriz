@@ -141,7 +141,7 @@ NIS: `ν = rᵀ S⁻¹ r`, serbestlik derecesi = `residual_dim()`.
 
 ### 4.1 Explicit inverse yasağı
 
-`S⁻¹` dokümantasyonda yazılır, **kodda hesaplanmaz**. `S.inverse()` yasaktır.
+`S⁻¹` dokümantasyonda yazılır, **kodda hesaplanmaz**. `S.inverse()` yasaktır. <!-- denetim5:muaf-satir .inverse() — §4.1 explicit inverse yasagi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 
 ```cpp
 const auto S_ldlt = S.ldlt();          // S simetrik pozitif tanımlı
@@ -270,7 +270,7 @@ Bu yalnızca residual için değil, sayısal çalışma alanının tamamı için
 Uygulama: sabit kapasiteli tipler (`Eigen::Matrix<Scalar, kMaxResidualDim, ...>`) veya
 çağıran tarafından sağlanan çalışma alanı (`MeasurementWorkspace&`). Runtime resize yapılmaz.
 
-**Değerle dinamik matris döndürmek yasaktır.** `MatX noise() const` gibi bir imza her
+**Değerle dinamik matris döndürmek yasaktır.** `MatX noise() const` gibi bir imza her <!-- denetim5:muaf-satir MatX noise — §8.1 tahsis yasagi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 çağrıda tahsis edebilir; yerine çalışma alanına yazılır.
 
 `MeasurementBuffer`'ın ölçüm/olay **sahipliği** bu hot-path sınırının dışındadır;

@@ -98,7 +98,7 @@ tercih değil:
 | Durum | 15-DoF sabit çekirdek + sınırlı kapasiteli augmentation (`PersistentCalibration` \| `Clone`) |
 | Geri sarma | `PipelineSnapshot` sahibi `Estimator`; backend yalnız `BackendSnapshot` taşır. Replay'i etkileyen *tüm* mutable state dahil (ADR-15,20) |
 | Tahsis | Sayısal hot path (`predict/update/evaluate`) tahsissiz; değerle dinamik matris dönülmez. Kuyruk sahipliği bu sınırın dışındadır (ADR-22) |
-| Kovaryans | Joseph formu + simetrizasyon **zorunlu**; `S.inverse()` yasak, `LDLT` ile çözülür |
+| Kovaryans | Joseph formu + simetrizasyon **zorunlu**; `S.inverse()` yasak, `LDLT` ile çözülür <!-- denetim5:muaf-satir .inverse() — kovaryans kurali; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez --> |
 | Başlatma | `EstimatorMode` (sistem) ≠ `SensorHealth` (tek sensör) |
 | Red sebebi | `UpdateResult` (filtre) ≠ `ProcessingResult` + `RejectReason` (ardışık düzen) |
 | InEKF iddiası | Exact group-affine/log-linear avantaj bias'sız SE₂(3) çekirdeğine aittir; genişletilmiş durumun tutarlılığı varsayılmaz, NEES/NIS ile ölçülür (ADR-21) |
@@ -139,7 +139,7 @@ Her deney bir şekil üretir, her şekil bir iddiayı kanıtlar. Çıktılar `re
 
 | # | Deney | Veri | Kanıtladığı |
 |---|---|---|---|
-| E1 | Monte Carlo tutarlılık: 500 koşu, ortalama NEES + %95 χ² bandı | sim | **Projenin en değerli grafiği.** Büyük yaw belirsizliğinde ESKF banttan çıkar, InEKF çıkmaz. |
+| E1 | Monte Carlo tutarlılık: 500 koşu, ortalama NEES + %95 χ² bandı | sim | **Projenin en değerli grafiği.** Büyük yaw belirsizliğinde iki backend'in bant içinde kalıp kalmadığını ölçer; sonuç deneyin çıktısıdır, önkabulü değil (ADR-21). |
 | E2 | Doğruluk kıyası: ATE/RPE, 3 kestirimci × 6 dizi | KITTI | `robot_localization`'a karşı sayısal üstünlük |
 | E3 | Kent kanyonu: multipath altında kapılama | UrbanNav | Naif vs. χ² kapılı güncelleme |
 | E4 | GNSS kaybı: iç mekâna girişte sapma eğrisi | NCLT + UrbanNav tünel | Teker odometrisi devralıyor; NHC/ZUPT/teker katkıları ayrıştırılmış |
@@ -161,7 +161,7 @@ Her faz sonunda repo **tamamlanmış görünür**. Yarım kalan faz yoktur.
 
 | Faz | Hafta | İçerik | Tamamlandı sayılır |
 |---|---|---|---|
-| **0** Temel | 1–2 | İskelet, CMake, Docker, CI matrisi, manif, sayısal Jacobian aracı, **minimal deterministik yörünge/sensör üreteci**, 4 otomatik denetim | Build + CI yeşil; SE₂(3) testleri geçiyor; kapalı formlu lineer-Gauss testi geçiyor; üreteç tohumlu ve tekrarlanabilir; ADR-1,2 yazılı |
+| **0** Temel | 1–2 | İskelet, CMake, Docker, CI matrisi, manif, sayısal Jacobian aracı, **minimal deterministik yörünge/sensör üreteci**, 5 otomatik denetim | Build + CI yeşil; SE₂(3) testleri geçiyor; kapalı formlu lineer-Gauss testi geçiyor; üreteç tohumlu ve tekrarlanabilir; ADR-1,2 yazılı |
 | **1** ESKF | 3–5 | IMU yayılımı, GNSS, teker hızı, NHC, ZUPT, ölçüm tamponu → **sentetik smoke test** → sonra KITTI+NCLT adaptörü | Sentetik veride ESKF yakınsıyor ve NIS makul (**gerçek veriye geçiş ön koşulu**); KITTI'de `robot_localization` ile denk ATE; tüm Jacobian testleri geçiyor; **repo paylaşılabilir (MVP)** |
 | **2** Kanıt | 6–8 | Üretecin Monte Carlo'ya genişletilmesi, NEES/NIS analizi, evo, otomatik rapor | E1 grafiği üretiliyor; `make results` her şeyi sıfırdan üretiyor; filtrenin iyimser olduğu bir senaryo dürüstçe raporlanmış |
 | **3** InEKF + odometri | 9–12 | InEKF backend, karşılaştırma, gözlemlenebilirlik; son hafta: göreli poz + stochastic cloning + çevrimiçi teker kalibrasyonu | İki backend aynı arayüzde; E1'de NEES farkı görünüyor; E7 yakınsıyor; blog yazısı yayında |

@@ -6,12 +6,13 @@
 > **Durum: dondurulmuş (architecture freeze).** Değişiklik yeni ADR gerektirir.
 >
 > Ön koşul: `CONVENTIONS.md` §3 (`J_res`), §4 (Joseph), §5 (durum), §6 (zaman), §8.1 (tahsis).
-> C++ standardı **C++17**'dir; `std::span` gibi C++20 tipleri kullanılmaz, `ArrayView` kullanılır.
+> C++ standardı **C++17**'dir; `std::span` gibi C++20 tipleri kullanılmaz, `ArrayView` kullanılır. <!-- denetim5:muaf-satir std::span — C++17 kurali; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 
 ---
 
 ## 0. Ortak tipler
 
+<!-- denetim5:muaf std::span — C++17 kuralini anlatan kod yorumu; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 ```cpp
 namespace kerteriz {
 
@@ -82,6 +83,7 @@ enum class EstimatorMode {
 
 }  // namespace kerteriz
 ```
+<!-- denetim5:muaf-son -->
 
 ---
 

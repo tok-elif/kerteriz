@@ -27,6 +27,7 @@ aşağıdaki başlangıç istemini kullan.
 
 > Aşağıdaki metni yeni bir AI oturumuna olduğu gibi yapıştır, ardından repo dosyalarını ver.
 
+<!-- denetim5:muaf std::span .inverse() MatX noise — devir talimati yasaklari sayar; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 ```
 Kerteriz adlı bir ROS 2 durum kestirim projesinde çalışıyorsun.
 
@@ -79,6 +80,7 @@ BOZULMAZ KURALLAR:
 
 ÖNCE NE YAPACAĞINI ÖZETLE, ONAY BEKLE, SONRA YAZ.
 ```
+<!-- denetim5:muaf-son -->
 
 ---
 
@@ -105,13 +107,13 @@ Arayüz değişikliğinde doküman kodla aynı PR'da güncellenir.
 | Kontrol | Nasıl |
 |---|---|
 | R1 ihlali | `grep -rE "rclcpp\|_msgs/" kerteriz_core/` → boş dönmeli |
-| `H` sızması | `grep -nE "\bH\b.*Jacobian\|MatX H" kerteriz_core/` → boş. Yalnız `J_res` olmalı |
-| Explicit inverse | `grep -rn "\.inverse()" kerteriz_core/` → kovaryans/innovation yolunda olmamalı |
+| `H` sızması | `grep -nE "\bH\b.*Jacobian\|MatX H" kerteriz_core/` → boş. Yalnız `J_res` olmalı <!-- denetim5:muaf-satir MatX H — denetim grep deseni; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez --> |
+| Explicit inverse | `grep -rn "\.inverse()" kerteriz_core/` → kovaryans/innovation yolunda olmamalı <!-- denetim5:muaf-satir .inverse() — denetim grep deseni; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez --> |
 | Naif kovaryans | Güncellemede `(I - K*H) * P` deseni var mı → Joseph olmalı |
 | Simetrizasyon | Güncelleme sonrası `0.5 * (P + P.transpose())` var mı |
 | Tahsis | Değerle dönen `MatX`/`VecX` var mı → `MeasurementWorkspace&` olmalı |
 | Zaman karışması | `double` tutulan **timestamp** var mı (`dt`'nin double olması doğrudur) |
-| C++17 uyumu | `std::span` veya başka C++20 API var mı → `ArrayView`/C++17 eşdeğeri kullan |
+| C++17 uyumu | `std::span` veya başka C++20 API var mı → `ArrayView`/C++17 eşdeğeri kullan <!-- denetim5:muaf-satir std::span — denetim grep deseni; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez --> |
 | Snapshot bütünlüğü | Yeni stateful alan eklendiyse `Snapshot`'a da eklenmiş mi |
 | Jacobian testi | Registry'de testsiz `Measurement` var mı (test paketi düşmeli) |
 | Kapsam taşması | Aktif fazın dışındaki dosyalar değişmiş mi |

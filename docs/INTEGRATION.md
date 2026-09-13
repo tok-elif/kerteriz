@@ -136,8 +136,11 @@ Yaw en zor olanıdır: yerçekimi roll ve pitch verir, yaw vermez.
 Kaynaklar: GNSS rota açısı (hareket gerekir), manyetometre (bozulmaya açık),
 çift anten GNSS (en iyi), ya da başlangıçta büyük belirsizlikle bırakıp yakınsamasını beklemek.
 
-**InEKF'in burada somut üstünlüğü var:** büyük yaw belirsizliğinde ESKF tutarlılığını kaybeder,
-InEKF kaybetmez. Kalkışta yaw'ı bilmiyorsan InEKF kullan.
+**InEKF'in burada yapısal bir avantajı beklenir:** SE₂(3) hata yapısı, büyük yaw
+belirsizliğinde linearizasyon kaynaklı tutarsızlığı azaltmayı hedefler. Ancak bu avantaj
+IMU bias'ları ve kalibrasyon durumları eklenmiş **genişletilmiş durumda** varsayılmaz;
+E1/NEES ile doğrulanır (ADR-21). Backend seçimini bu ölçüme dayandır — bu proje
+tutarlılığı varsaymaz, ölçer.
 
 ### Adım 6 — Doğrulama: filtre gerçekten çalışıyor mu
 

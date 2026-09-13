@@ -35,7 +35,7 @@ Kendi kendine yeten tam tanım: [`docs/SPEC.md`](docs/SPEC.md)
 | R5 | **Platforma özel hiçbir sayı koda gömülmez.** | "Aynı ikili dosya, farklı YAML" hedefi. |
 | R6 | **Önce simülasyon, sonra gerçek veri.** Her filtre gerçek-veri adaptöründen *önce* sentetik veride doğrulanır. | Gerçek veride hata ayıklamak zaman öldürür. |
 | R7 | **Faz dışına çıkılmaz.** §3 kapsamı belirler. | Bu projelerin ölüm sebebi kapsam kayması. |
-| R8 | **C++17.** `std::span`, `std::optional<T&>`, konsept, `<ranges>` gibi C++20 API'leri kullanılmaz. Görünüm gerekiyorsa `ArrayView` (INTERFACES §0). | Humble / GCC 11 hedefi (ADR-12). |
+| R8 | **C++17.** `std::span`, `std::optional<T&>`, konsept, `<ranges>` gibi C++20 API'leri kullanılmaz. Görünüm gerekiyorsa `ArrayView` (INTERFACES §0). | Humble / GCC 11 hedefi (ADR-12). <!-- denetim5:muaf-satir std::span — R8 C++17 kurali; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez --> |
 
 ---
 
@@ -129,7 +129,7 @@ Mimari freeze ancak zorlanabiliyorsa gerçektir. Bunlar CI'da zorunludur:
 | 2 | **Durum kapasitesi** | `static_assert(kCoreDof + kMaxAugmentDof == kMaxStateDof)` + kayıtta kapasite kontrolü |
 | 3 | **`J_res` işareti** | Kapalı formlu lineer-Gauss testi. `J_res` yerine `−J_res` yazılırsa sayısal Jacobian testi geçer, **bu test düşer**. |
 | 4 | **Jacobian testi zorunluluğu** | Test registry üzerinden: `Measurement` fabrikaya kaydolurken Jacobian testini de kaydeder; testsiz ölçüm varsa test paketi düşer. *Dosya tarayan kırılgan script yazma.* |
-| 5 | **Doküman tutarlılığı** | Yasaklı sembol taraması (`MatX H`, `struct Residual`, `MatX noise`, `CompositeState<`, `reset(const NavState`, `std::span`, `.inverse()`) tüm `.md` ve `.hpp` dosyalarında. "Bunu yapma" uyarıları ve dokunulmaz ADR-1…12 metni hariç tutulur. |
+| 5 | **Doküman tutarlılığı** | Yasaklı sembol taraması (`MatX H`, `struct Residual`, `MatX noise`, `CompositeState<`, `reset(const NavState`, `std::span`, `.inverse()`) tüm `.md` ve `.hpp` dosyalarında. Hariç tutmalar `tools/check_docs.py` tarafından **açık işaretlemeyle** verilir (`denetim5:muaf`); işaretleme yakaladığı her sembolü adıyla saymak zorundadır, yani muafiyet blanket değil allowlist'tir. Kod tarafında muafiyet yoktur. <!-- denetim5:muaf-satir MatX H struct Residual MatX noise CompositeState< reset(const NavState std::span .inverse() — Denetim 5 in kendi yasakli sembol listesi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez --> |
 
 Denetim 3 ve 4 bu projenin en önemli iki testidir.
 
@@ -149,10 +149,10 @@ Denetim 3 ve 4 bu projenin en önemli iki testidir.
 - **Zaman damgasını `double` saniye tutmak.** Mutlak zaman her zaman `TimeNs` (int64 ns). `dt`'nin `double` saniye olması **doğrudur** — iki `TimeNs` farkından hesaplanır (CONVENTIONS §6).
 - **`J_res` işaretini ters yazmak.** `J_res = ∂r/∂δ`, `r = z ⊖ h(X)` — Öklidyen durumda `J_res = −H`. Düzeltmede eksi vardır: `δ = −P J_resᵀ S⁻¹ r`. Sayısal Jacobian testi bu hatayı **yakalamaz**; kapalı formlu test yakalar.
 - **`H` adını kullanmak.** Bu kod tabanında ölçüm Jacobian'ı yoktur. `Jr` ise Lie sağ Jacobian'ıdır (`manif::…::Jr`) — karıştırma.
-- **`S.inverse()` yazmak.** Yasak (ADR-17). `S.ldlt().solve(...)` kullan.
+- **`S.inverse()` yazmak.** Yasak (ADR-17). `S.ldlt().solve(...)` kullan. <!-- denetim5:muaf-satir .inverse() — ADR-17 yasagi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 - **Naif kovaryans güncellemesi.** Joseph formu ve `P ← ½(P+Pᵀ)` zorunludur, opsiyonel optimizasyon değil (ADR-17).
 - **Sayısal hot path'te tahsis.** `predict`, `update`, `evaluate` ve bunların çağırdığı matris işlemlerinde heap tahsisi, runtime resize ve değerle dinamik matris döndürme yasaktır (ADR-22). Ölçüm `MeasurementWorkspace&` doldurur. *Kuyruk sahipliği (`std::unique_ptr<Measurement>`) bu sınırın dışındadır — orada tahsis serbesttir.*
-- **`std::span` yazmak.** C++20. `ArrayView` kullan (R8).
+- **`std::span` yazmak.** C++20. `ArrayView` kullan (R8). <!-- denetim5:muaf-satir std::span — R8 yasagi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 - **`reset(x, P)` aramak.** Yoktur. Backend `save_snapshot()` → `BackendSnapshot`; **tam snapshot'ın sahibi `Estimator`'dür** ve `PipelineSnapshot` döner (backend + NIS + FDI). Backend bütünlük katmanını bilmez (ADR-15, ADR-20).
 - **Göreli ölçümü mutlak gibi işlemek.** Odometri iki anı bağlar; klonlama olmadan korelasyon kaybolur (ADR-9, ADR-14).
 - **InEKF avantajını fazla güçlü ifade etmek.** Exact group-affine / log-linear özellik **bias'sız** SE₂(3) çekirdeğine aittir. Bias, kalibrasyon ve klonlarla yaklaşıklaşır (*imperfect InEKF*). "Tanım gereği tutarlı" **yazma**; genişletilmiş durumun tutarlılığı E1/NEES ile ölçülür (ADR-21).

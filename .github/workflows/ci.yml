@@ -227,9 +227,11 @@ jobs:
   # Ampirik olarak doğrulandı: SahteTeker'in test kaydı silindiğinde denetim
   # tipi adıyla düşüyor, gövdesiz bir test kaydı ise hiç linklenmiyor.
   #
-  # Böylece beş denetimin dördü canlı; ⑤'in doküman yarısı S11'de sert kapıya
-  # çevrilecek. Sahte "geçti" üretmemek için bugün var olmayan denetimler
-  # burada taklit EDİLMEZ.
+  # ⑤ (doküman ve kod tutarlılığı) S11'de tam kapıya çevrildi:
+  # tools/check_docs.py. Doküman yarısı eskiden yalnızca raporluyordu.
+  #
+  # Böylece beş denetimin beşi de canlı. Sahte "geçti" üretmemek için bugün
+  # var olmayan denetimler burada taklit EDİLMEZ.
   # ---------------------------------------------------------------------------
   checks:
     name: checks (denetimler)
@@ -245,37 +247,18 @@ jobs:
           fi
           echo "Denetim ① temiz."
 
-      - name: Denetim ⑤ — yasaklı sembol taraması (kod)
+      # Denetim ⑤ tek script'tir (S11). Kod tarafinda muafiyet YOKTUR; dokuman
+      # tarafinda muafiyet acik isaretlemeyle verilir ve script bunu allowlist
+      # gibi zorlar (bos muafiyet ve sebepte adi gecmeyen sembol = hata).
+      #
+      # Eskiden dokuman yarisi yalnizca RAPORLUYORDU, cunku muafiyet
+      # mekanizmasi makine-okunur degildi. Artik oyle; sert kapiya cevrildi.
+      # Kapının kendisi bozulursa hiçbir şey uyarmaz, her şey yeşil kalır.
+      # Bu yüzden gerçek taramadan ÖNCE tarayıcının kendi regresyon testi koşar.
+      - name: Denetim ⑤ — doküman ve kod tutarlılığı
         run: |
-          # Kod tarafı sert kapıdır: .hpp/.cpp içinde bu sembollerin hiçbiri
-          # bulunmamalıdır. Doküman tarafı aşağıda ayrıca raporlanır.
-          status=0
-          while IFS= read -r sym; do
-            if grep -rnF -- "$sym" $(git ls-files '*.hpp' '*.cpp') 2>/dev/null; then
-              echo "YASAKLI SEMBOL kodda: $sym"; status=1
-            fi
-          done <<'SYMS'
-          MatX H
-          struct Residual
-          MatX noise
-          CompositeState<
-          reset(const NavState
-          std::span
-          .inverse()
-          SYMS
-          [ "$status" -eq 0 ] && echo "Denetim ⑤ (kod) temiz."
-          exit $status
-
-      - name: Denetim ⑤ — doküman taraması (bilgilendirme)
-        run: |
-          # CLAUDE.md §6.1'e göre .md tarafında "bunu yapma" uyarıları ve
-          # dokunulmaz ADR-1…12 metni muaftır. Bu muafiyet mekanizması henüz
-          # makine-okunur değil, bu yüzden burası RAPORLAR, düşürmez.
-          # Muafiyet işaretlemesi eklenince sert kapıya çevrilecektir.
-          grep -rnF -e 'MatX H' -e 'struct Residual' -e 'MatX noise' \
-                    -e 'CompositeState<' -e 'reset(const NavState' \
-                    -e 'std::span' -e '.inverse()' \
-                    $(git ls-files '*.md') || echo "Dokümanlarda eşleşme yok."
+          python3 tools/check_docs.py --self-test
+          python3 tools/check_docs.py
 
       - name: ADR numaraları kesintisiz
         run: |

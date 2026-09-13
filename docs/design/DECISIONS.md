@@ -42,7 +42,7 @@ altında türetme yazılır. Karşılığında InEKF backend'i doğal biçimde e
 
 ## ADR-3 · Genel ⊞/⊟ bileşik manifold
 
-**Karar.** Durum `CompositeState<Blocks...>` şablonudur; teğet uzay indeksleri derleme
+**Karar.** Durum `CompositeState<Blocks...>` şablonudur; teğet uzay indeksleri derleme <!-- denetim5:muaf-satir CompositeState< — ADR-3 tarihsel metni, ADR-14 ile degistirilmistir; dokunulmaz -->
 zamanında hesaplanır.
 
 **Gerekçe.** Yeni durum eklemek (teker ölçek faktörü, sensör extrinsic'i, GNSS anten kolu,
@@ -264,7 +264,7 @@ augmentation deposu. Depoda **iki ayrı yaşam döngüsü** vardır:
 Depolama başta `kMaxStateDof` kapasitesiyle ayrılır; `active_dof()` çalışma anında değişir,
 heap'te yeniden boyutlandırma yapılmaz.
 
-**Gerekçe.** ADR-3'teki derleme zamanı `CompositeState<Blocks...>` iki sözü aynı anda
+**Gerekçe.** ADR-3'teki derleme zamanı `CompositeState<Blocks...>` iki sözü aynı anda <!-- denetim5:muaf-satir CompositeState< — ADR-3 e atifla gerekce; tarihsel tasarima referans -->
 tutamıyordu: `INTERFACES` "yeni blok = alias'ı düzenle" (yani recompile) derken
 `INTEGRATION` "aynı ikili dosya, farklı YAML" diyordu. Ayrıca klon sayısı doğası gereği
 derleme zamanında bilinemez. Ortak depo bu ikisini çözer.
@@ -308,10 +308,10 @@ yeni bileşen eklendiğinde aynı hata tekrar doğmaz.
 `Measurement::evaluate` ve bunların matris/çalışma alanı işlemleri dahil. Kuyruk sahipliği
 sınırı ADR-22 ile netleştirilir. Uygulama: sabit kapasiteli Eigen tipleri veya
 çağıran tarafından sağlanan `MeasurementWorkspace&`. Değerle dinamik matris döndürmek
-(`MatX noise() const` gibi) yasaktır.
+(`MatX noise() const` gibi) yasaktır. <!-- denetim5:muaf-satir MatX noise — ADR-18 yasagi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 
 **Gerekçe.** CONVENTIONS §8.1 tahsisi zaten yasaklıyordu, ama arayüz bunu garanti etmiyordu.
-`MatX noise() const` her çağrıda tahsis eder. Dinamik tipler önceden boyutlandırılıp yeniden
+`MatX noise() const` her çağrıda tahsis eder. Dinamik tipler önceden boyutlandırılıp yeniden <!-- denetim5:muaf-satir MatX noise — ADR-18 gerekcesi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 kullanılabilir, fakat sözleşme bunu zorunlu kılmadıkça uygulamaya bırakılmış olur.
 
 **Alternatifler.** Yalnızca `Residual`'ı sabit boyuta geçirmek — daha zayıf örneği çözer,
@@ -326,7 +326,7 @@ olur; karşılığında gerçek zamanlı davranış öngörülebilir ve gömül�
 
 **Karar.** Kovaryans güncellemesi Joseph formudur, ardından `P ← ½(P + Pᵀ)`. Naif
 `(I−KH)P` kullanılmaz. `S⁻¹` dokümanda yazılır, kodda hesaplanmaz — `LDLT` ile çözülür,
-`S.inverse()` yasaktır.
+`S.inverse()` yasaktır. <!-- denetim5:muaf-satir .inverse() — ADR-17 yasagi; yasagi anlatan uyari; sembolu yazmadan kural ifade edilemez -->
 
 **Gerekçe.** Projenin tezi kovaryansın anlamlı olmasıdır; ADR-8 kovaryans koşul sayısını
 teşhis çıktısı sayar. Naif form simetriyi ve pozitif tanımlılığı yuvarlama hatasına karşı
