@@ -424,7 +424,7 @@ TEST(GnssPosition, JacobianMatchesNumeric) {
   const JacMat J_num = numeric_residual_jacobian(
       x, [&](const NavState& xp) {
            MeasurementWorkspace ww; StateBundle b{xp};
-           z.evaluate(b, ww); return ww.r.head(ww.dim);
+           z.evaluate(b, ww); return ww.r.head(ww.dim).eval();
          },
       z.residual_dim());
 

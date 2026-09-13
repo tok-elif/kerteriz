@@ -19,3 +19,8 @@ target_link_libraries(kerteriz_types_standalone PRIVATE kerteriz::core)
 add_executable(test_lie test_lie.cpp)
 target_link_libraries(test_lie PRIVATE kerteriz::core GTest::gtest_main)
 add_test(NAME test_lie COMMAND test_lie)
+
+# S7 — sayisal residual Jacobian.
+add_executable(test_numeric_residual_jacobian test_numeric_residual_jacobian.cpp)
+target_link_libraries(test_numeric_residual_jacobian PRIVATE kerteriz::core GTest::gtest_main)
+add_test(NAME test_numeric_residual_jacobian COMMAND test_numeric_residual_jacobian)
