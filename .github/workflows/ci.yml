@@ -260,22 +260,9 @@ jobs:
           python3 tools/check_docs.py --self-test
           python3 tools/check_docs.py
 
-      - name: ADR numaraları kesintisiz
-        run: |
-          python3 - <<'PY'
-          import re, io, sys, glob
-          # S12'den beri ADR'ler ayri dosyalara bolunuyor. Numaralar hem
-          # DECISIONS.md'den hem de bolunmus dosyalardan toplanir; boylece bir
-          # ADR tasindiginda dizin girisi kalmasa bile denetim dogru calisir.
-          dosyalar = ['docs/design/DECISIONS.md'] + sorted(glob.glob('docs/design/ADR-*.md'))
-          n = set()
-          for yol in dosyalar:
-              s = io.open(yol, encoding='utf-8').read()
-              n |= {int(x) for x in re.findall(r'^#+ ADR-(\d+)', s, re.M)}
-          n = sorted(n)
-          missing = [i for i in range(1, max(n) + 1) if i not in n]
-          print('Kaynak dosya: %d, ADR 1..%d, adet %d' % (len(dosyalar), max(n), len(n)))
-          if missing:
-              print('EKSIK ADR:', missing); sys.exit(1)
-          print('ADR numaralari kesintisiz.')
-          PY
+      # Numara surekliligi TEK BASINA yetmez: dizin girisi ile bolunmus dosya
+      # ayni numarayi verir, biri kaybolsa oteki numarayi ayakta tutar ve
+      # denetim yesil kalir. Link butunlugu ve ad/baslik eslesmesi bu yuzden
+      # ayri kontrollerdir.
+      - name: ADR bütünlüğü
+        run: python3 tools/check_adr.py
