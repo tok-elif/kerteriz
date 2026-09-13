@@ -8,35 +8,13 @@
 
 ## ADR-1 · ROS'suz kestirim çekirdeği
 
-**Karar.** `kerteriz_core` bağımsız bir CMake hedefidir. Bağımlılığı yalnızca Eigen ve manif'tir.
-ROS başlık dosyası, ROS mesaj tipi veya `rclcpp` bağımlılığı içeremez. ROS 2 paketi çekirdeği sarar.
-
-**Gerekçe.** Çekirdek ROS kurulmamış bir makinede derlenir, test edilir, profillenir. Testler
-saniyeler içinde çalışır. Kod micro-ROS'a, gömülü hedefe, ROS 1 köprüsüne veya toplu işleme
-hattına taşınabilir. OpenVINS, GTSAM ve Ceres aynı ayrımı kullanır.
-
-**Alternatifler.** Her şeyi ROS düğümünde toplamak — daha hızlı başlar, test edilemez ve taşınamaz hale gelir.
-
-**Sonuçlar.** Bir dönüşüm katmanı maliyeti doğar (`conversions.cpp`). Karşılığında CI hızlanır
-ve taşınabilirlik iddiası kanıtlanabilir olur. CI'da çekirdeği ROS'suz derleyen ayrı bir iş vardır.
+Ayrı dosyaya taşındı: [`ADR-0001-ros-free-core.md`](ADR-0001-ros-free-core.md).
 
 ---
 
 ## ADR-2 · Durum SE₂(3) × R⁶ üzerinde
 
-**Karar.** Navigasyon durumu genişletilmiş poz grubu SE₂(3) (rotasyon, hız, konum) artı
-IMU biasları için R⁶'dır.
-
-**Gerekçe.** Yer çekimli IMU kinematiği SE₂(3) üzerinde *group-affine*'dir. Bu, InEKF'in
-hata dinamiğinin durumdan bağımsız olması için gereken ve yeten koşuldur: hata log-lineer
-ilerler, linearizasyon noktası kaynaklı tutarsızlık ortadan kalkar. Tutarlılık ayarlamayla
-değil, yapıdan gelir.
-
-**Alternatifler.** SO(3) × R³ × R³ — yaygın, ama hata dinamiği duruma bağlı; büyük yaw
-belirsizliğinde EKF sahte gözlemlenebilirlik kazanır ve aşırı-iyimser olur (E1'de görünür).
-
-**Sonuçlar.** manif'in `SE_2_3` desteği zorunlu. Ekip için öğrenme eğrisi var; `docs/theory/`
-altında türetme yazılır. Karşılığında InEKF backend'i doğal biçimde eklenebilir hale gelir.
+Ayrı dosyaya taşındı: [`ADR-0002-se23-state.md`](ADR-0002-se23-state.md).
 
 ---
 
