@@ -38,6 +38,40 @@ TrajectoryGenerator daire() {
   return TrajectoryGenerator(p);
 }
 
+/// Duragan govde: olcum eksi ground truth TAM OLARAK gurultu terimidir.
+TrajectoryGenerator duragan() {
+  TrajectoryParams p;
+  p.kind = TrajectoryKind::kConstantVelocity;
+  p.linear_velocity = Vec3::Zero();
+  return TrajectoryGenerator(p);
+}
+
+/// Ornek ortalamasi ve ornek standart sapmasi (Bessel duzeltmeli).
+/// Ortalamanin sifir oldugu VARSAYILMAZ, kestirilir — boylece bir kayma
+/// (bias) gurultu genligi gibi gorunup testi yanlislikla gecirmez.
+struct StdBirikec {
+  int n = 0;
+  Scalar toplam = 0;
+  Scalar toplam_kare = 0;
+
+  void ekle(Scalar x) {
+    ++n;
+    toplam += x;
+    toplam_kare += x * x;
+  }
+  Scalar ortalama() const { return toplam / static_cast<Scalar>(n); }
+  Scalar std_sapma() const {
+    const Scalar m = ortalama();
+    return std::sqrt((toplam_kare - static_cast<Scalar>(n) * m * m) / static_cast<Scalar>(n - 1));
+  }
+};
+
+/// Bir olcumun uc ekseninin std'si tek birikecte toplanir.
+struct ImuGurultuOlcumu {
+  Scalar jiro_std = 0;
+  Scalar ivme_std = 0;
+};
+
 /// Strapdown entegrasyonu. Gurultusuz IMU verildiginde ground truth'u
 /// geri vermelidir — sentezin kendi icinde tutarli oldugunun kaniti.
 struct EntegrasyonSonucu {
@@ -133,6 +167,122 @@ TEST(ImuSynthesizer, DriftGrowsWhenNoiseIsAdded) {
       << "gurultu eklendi ama sapma artmadi — gurultu modeli baglanmamis";
 }
 
+TEST(ImuSynthesizer, WhiteNoiseStdMatchesDensityOverSqrtDt) {
+  // DoD: entegrasyon hatasi gurultu modeliyle TUTARLI olmali. Yalnizca
+  // "gurultu etkili" demek yetmez; olcekleme de dogru olmalidir.
+  // Ayrik beyaz gurultu:  sigma_d = yogunluk / sqrt(dt)   (CONVENTIONS §7)
+  //
+  // Bias yuruyusu ve baslangic bias'i sifir birakilir; geriye kalan tek
+  // terim beyaz gurultudur, yani olcum eksi ground truth = gurultu.
+  auto g = duragan();
+  const auto gt = g.at(0);
+
+  ImuParams p;
+  p.gyro_noise_density = 0.02;  // rad/s/sqrt(Hz)
+  p.accel_noise_density = 0.08; // m/s^2/sqrt(Hz)
+
+  constexpr int kOrnek = 20000;
+
+  auto olc = [&](Scalar dt) {
+    SeededRng rng(4242U);
+    ImuSynthesizer imu(p, rng);
+    StdBirikec jiro;
+    StdBirikec ivme;
+    for (int i = 0; i < kOrnek; ++i) {
+      const auto s = imu.sample(gt, dt);
+      const Vec3 ivme_gurultusu = s.accel - Vec3(0.0, 0.0, kerteriz_sim::kGravity);
+      for (int k = 0; k < 3; ++k) {
+        jiro.ekle(s.gyro[k]); // duragan govdede gercek w = 0
+        ivme.ekle(ivme_gurultusu[k]);
+      }
+    }
+    return ImuGurultuOlcumu{jiro.std_sapma(), ivme.std_sapma()};
+  };
+
+  // 60000 orneklik std kestiriminin bagil hatasi ~1/sqrt(2N) = %0.3.
+  // %4 tolerans bunun ~13 katidir (tesadufi dusme pratikte imkansiz), ama
+  // yanlis usse karsi hala cok dar: dt yerine 1/dt kullanilsa dt=4e-3 icin
+  // olculen std 15.8 kat sapardi.
+  const Scalar dt1 = 4e-3;
+  const auto o1 = olc(dt1);
+  const Scalar jiro_beklenen1 = p.gyro_noise_density / std::sqrt(dt1);
+  const Scalar ivme_beklenen1 = p.accel_noise_density / std::sqrt(dt1);
+  EXPECT_NEAR(o1.jiro_std, jiro_beklenen1, jiro_beklenen1 * 0.04);
+  EXPECT_NEAR(o1.ivme_std, ivme_beklenen1, ivme_beklenen1 * 0.04);
+
+  const Scalar dt2 = 1e-2;
+  const auto o2 = olc(dt2);
+  const Scalar jiro_beklenen2 = p.gyro_noise_density / std::sqrt(dt2);
+  const Scalar ivme_beklenen2 = p.accel_noise_density / std::sqrt(dt2);
+  EXPECT_NEAR(o2.jiro_std, jiro_beklenen2, jiro_beklenen2 * 0.04);
+  EXPECT_NEAR(o2.ivme_std, ivme_beklenen2, ivme_beklenen2 * 0.04);
+
+  // Uslerin kendisini dogrudan sinar. Iki kosuda tohum ve cagri sayisi ayni
+  // oldugu icin RNG cekilisleri BIREBIR aynidir; dolayisiyla std orani
+  // istatistiksel degil, cebirseldir: sqrt(dt1/dt2). Ornekleme gurultusu
+  // payda ve pay'da sadelesir, bu yuzden 1e-12 tolerans mesrudur.
+  const Scalar oran_beklenen = std::sqrt(dt1 / dt2);
+  EXPECT_NEAR(o2.jiro_std / o1.jiro_std, oran_beklenen, 1e-12)
+      << "jiro beyaz gurultusu dt ile 1/sqrt(dt) yasasina gore olceklenmiyor";
+  EXPECT_NEAR(o2.ivme_std / o1.ivme_std, oran_beklenen, 1e-12)
+      << "ivme beyaz gurultusu dt ile 1/sqrt(dt) yasasina gore olceklenmiyor";
+}
+
+TEST(ImuSynthesizer, BiasIncrementStdMatchesWalkTimesSqrtDt) {
+  // Rastgele yuruyus artisi:  std(db) = sigma_b * sqrt(dt)   (CONVENTIONS §7)
+  // Beyaz gurultu sifir birakilir; olculen tek sey bias artislaridir.
+  auto g = duragan();
+  const auto gt = g.at(0);
+
+  ImuParams p;
+  p.gyro_bias_walk = 3e-3;  // rad/s/sqrt(s)
+  p.accel_bias_walk = 7e-3; // m/s^2/sqrt(s)
+
+  constexpr int kOrnek = 20000;
+
+  auto olc = [&](Scalar dt) {
+    SeededRng rng(9090U);
+    ImuSynthesizer imu(p, rng);
+    StdBirikec jiro;
+    StdBirikec ivme;
+    Vec3 onceki_jiro = imu.gyro_bias();
+    Vec3 onceki_ivme = imu.accel_bias();
+    for (int i = 0; i < kOrnek; ++i) {
+      imu.sample(gt, dt);
+      const Vec3 d_jiro = imu.gyro_bias() - onceki_jiro;
+      const Vec3 d_ivme = imu.accel_bias() - onceki_ivme;
+      for (int k = 0; k < 3; ++k) {
+        jiro.ekle(d_jiro[k]);
+        ivme.ekle(d_ivme[k]);
+      }
+      onceki_jiro = imu.gyro_bias();
+      onceki_ivme = imu.accel_bias();
+    }
+    return ImuGurultuOlcumu{jiro.std_sapma(), ivme.std_sapma()};
+  };
+
+  const Scalar dt1 = 4e-3;
+  const auto o1 = olc(dt1);
+  const Scalar jiro_beklenen1 = p.gyro_bias_walk * std::sqrt(dt1);
+  const Scalar ivme_beklenen1 = p.accel_bias_walk * std::sqrt(dt1);
+  EXPECT_NEAR(o1.jiro_std, jiro_beklenen1, jiro_beklenen1 * 0.04);
+  EXPECT_NEAR(o1.ivme_std, ivme_beklenen1, ivme_beklenen1 * 0.04);
+
+  const Scalar dt2 = 2.5e-2;
+  const auto o2 = olc(dt2);
+  const Scalar jiro_beklenen2 = p.gyro_bias_walk * std::sqrt(dt2);
+  const Scalar ivme_beklenen2 = p.accel_bias_walk * std::sqrt(dt2);
+  EXPECT_NEAR(o2.jiro_std, jiro_beklenen2, jiro_beklenen2 * 0.04);
+  EXPECT_NEAR(o2.ivme_std, ivme_beklenen2, ivme_beklenen2 * 0.04);
+
+  // Us dogrudan: beyaz gurultunun tersi yonde, sqrt(dt2/dt1).
+  const Scalar oran_beklenen = std::sqrt(dt2 / dt1);
+  EXPECT_NEAR(o2.jiro_std / o1.jiro_std, oran_beklenen, 1e-12)
+      << "jiro bias yuruyusu dt ile sqrt(dt) yasasina gore olceklenmiyor";
+  EXPECT_NEAR(o2.ivme_std / o1.ivme_std, oran_beklenen, 1e-12)
+      << "ivme bias yuruyusu dt ile sqrt(dt) yasasina gore olceklenmiyor";
+}
+
 TEST(ImuSynthesizer, BiasRandomWalkAccumulates) {
   ImuParams p;
   p.gyro_bias_walk = 1e-2;
@@ -215,6 +365,28 @@ TEST(WheelSynthesizer, ScaleFactorErrorIsRecoverable) {
   const auto gt = g.at(kSaniye);
   const auto s = teker.sample(gt);
   EXPECT_NEAR(s.forward_speed / gt.velocity.norm(), olcek, 1e-12);
+}
+
+TEST(WheelSynthesizer, NoiseHasConfiguredStandardDeviation) {
+  // Teker gurultusu dogrudan m/s cinsinden std'dir — IMU'nun aksine dt
+  // olceklemesi YOKTUR. Ayarlanan deger ile olculen std birebir tutmali.
+  auto g = daire();
+  const auto gt = g.at(kSaniye);
+  const Scalar gercek_hiz = gt.velocity.norm();
+
+  SeededRng rng(31U);
+  const Scalar sigma = 0.35;
+  WheelSynthesizer teker(WheelParams{1.0, sigma}, rng);
+
+  StdBirikec birikec;
+  for (int i = 0; i < 20000; ++i) {
+    birikec.ekle(teker.sample(gt).forward_speed - gercek_hiz);
+  }
+
+  EXPECT_NEAR(birikec.std_sapma(), sigma, sigma * 0.04);
+  // Gurultu sifir ortalamali olmali; kacak bir kayma olcek hatasi gibi
+  // davranip Faz 3 kalibrasyonunu yanlis dogrular.
+  EXPECT_NEAR(birikec.ortalama(), 0.0, sigma * 0.04);
 }
 
 TEST(Synthesizers, SameSeedReproducesIdenticalSensorStreams) {

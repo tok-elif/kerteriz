@@ -150,7 +150,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake git libeigen3-dev clang-tidy
+            build-essential cmake git libeigen3-dev clang-tidy libgtest-dev
           pip3 install --no-cache-dir "clang-format==18.1.8"
 
       - name: Sürümler
@@ -164,12 +164,44 @@ jobs:
           [ -n "$files" ] || { echo "C++ kaynağı yok — atlanıyor."; exit 0; }
           clang-format --dry-run --Werror $files
 
-      - name: clang-tidy
+      - name: clang-tidy (kerteriz_core)
         run: |
           files=$(git ls-files 'kerteriz_core/*.cpp')
           [ -n "$files" ] || { echo "kerteriz_core'da .cpp yok — atlanıyor."; exit 0; }
           cmake -S kerteriz_core -B build/tidy -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           clang-tidy -p build/tidy $files
+
+      # kerteriz_sim başlık-içi (INTERFACE) bir kütüphanedir: production
+      # başlıkları hiçbir zaman tek başına derlenmez, yalnızca onları dahil
+      # eden bir translation unit üzerinden analiz edilebilir. O yüzden tidy
+      # test TU'ları üzerinden koşar; .clang-tidy'nin HeaderFilterRegex'i
+      # zaten kerteriz_sim/include'u kapsadığı için teşhisler production
+      # başlıklarından da gelir.
+      #
+      # Ayrı build dizini (build/tidy-sim) gerekir: core'un tidy configure'u
+      # kerteriz_sim hedeflerini içermez.
+      - name: clang-tidy (kerteriz_sim)
+        run: |
+          files=$(git ls-files 'kerteriz_sim/test/*.cpp')
+          # Burada "dosya yok -> atla" YOK. Bu TU'lar sim başlıklarının tek
+          # analiz yoludur; kaybolurlarsa sessizce geçmek yerine düşmeliyiz.
+          [ -n "$files" ] || { echo "kerteriz_sim test TU'su bulunamadı."; exit 1; }
+          cmake -S kerteriz_sim -B build/tidy-sim -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+          # compile_commands.json'da olmayan bir dosyaya clang-tidy tahmini
+          # bayraklarla bakar ve eksik analiz edip yine 0 döndürebilir.
+          python3 - $files <<'PY'
+          import json, os, sys
+          db = {os.path.realpath(e["file"])
+                for e in json.load(open("build/tidy-sim/compile_commands.json"))}
+          eksik = [f for f in sys.argv[1:] if os.path.realpath(f) not in db]
+          if eksik:
+              print("compile_commands.json'da yok:", eksik)
+              sys.exit(1)
+          print(f"{len(sys.argv) - 1} TU derleme veritabanında mevcut.")
+          PY
+
+          clang-tidy -p build/tidy-sim $files
 
   # ---------------------------------------------------------------------------
   # checks — CLAUDE.md §6.1 denetimleri
