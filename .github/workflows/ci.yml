@@ -137,9 +137,14 @@ jobs:
   # bozulursa build-test ve core-standalone işleri derlenmez. Denetimin
   # kayıt sırasındaki yarısı NavState ile (Faz 1) gelecek.
   #
-  # ③ ve ④ henüz YOK:
-  #     ③ J_res işareti, kapalı formlu test -> S8 ile gelir
-  #     ④ Jacobian testi registry'si        -> S10 ile gelir
+  # ③ (J_res işareti) S8'de geldi: test_linear_update içindeki
+  # ClosedFormScalarGaussian. Ayrı bir adım gerekmez — testi build-test ve
+  # core-standalone işleri zaten koşturur ve düşerse iş kırmızı olur.
+  # Ampirik olarak doğrulandı: güncellemede işaret çevrildiğinde bu test
+  # düşer, sayısal Jacobian testi ise geçmeye devam eder.
+  #
+  # ④ henüz YOK:
+  #     ④ Jacobian testi registry'si -> S10 ile gelir
   # Bu iş, o adımlar geldikçe genişletilecektir. Sahte "geçti" üretmemek için
   # bugün var olmayan denetimler burada taklit EDİLMEZ.
   # ---------------------------------------------------------------------------

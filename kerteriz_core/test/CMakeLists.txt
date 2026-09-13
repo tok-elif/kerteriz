@@ -24,3 +24,9 @@ add_test(NAME test_lie COMMAND test_lie)
 add_executable(test_numeric_residual_jacobian test_numeric_residual_jacobian.cpp)
 target_link_libraries(test_numeric_residual_jacobian PRIVATE kerteriz::core GTest::gtest_main)
 add_test(NAME test_numeric_residual_jacobian COMMAND test_numeric_residual_jacobian)
+
+# S8 — CONVENTIONS §4 guncellemesi ve Denetim (3).
+# ClosedFormScalarGaussian bu fazin en onemli testidir.
+add_executable(test_linear_update test_linear_update.cpp)
+target_link_libraries(test_linear_update PRIVATE kerteriz::core GTest::gtest_main)
+add_test(NAME test_linear_update COMMAND test_linear_update)
