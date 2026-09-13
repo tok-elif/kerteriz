@@ -31,6 +31,24 @@ include(FetchContent)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+# -----------------------------------------------------------------------------
+# Bağımlılık seçenekleri — CACHE'e YAZILMAZ
+#
+# Daha önce bu seçenekler `set(X OFF CACHE BOOL "" FORCE)` ile ayarlanıyordu.
+# BUILD_TESTING, BUILD_EXAMPLES gibi GENEL adlar global cache'e zorlandığı için
+# dışarı sızıyordu:
+#   - `cmake -DBUILD_TESTING=ON` diyen kullanıcının seçimi sessizce OFF'a
+#     çevriliyordu;
+#   - kerteriz_core'u `add_subdirectory` ile ekleyen bir üst proje
+#     (kerteriz_sim'in bağımsız yolu) kendi BUILD_TESTING değerini kaybediyordu.
+#
+# Çözüm: normal (dizin kapsamlı) değişken kullanmak. Cache'e dokunulmaz; değer
+# yalnızca bu dizin ve altındaki FetchContent alt projeleri için geçerlidir.
+# CMP0077 NEW, alt projelerdeki `option()` çağrılarının var olan normal
+# değişkeni ezmemesini sağlar — alt projenin kendi cmake_minimum_required'ı
+# daha eski olsa bile.
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+
 option(KERTERIZ_BUILD_TESTING "kerteriz_core testlerini derle" ON)
 
 # -----------------------------------------------------------------------------
@@ -49,10 +67,10 @@ else()
     GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
     GIT_TAG        3.4.0
     GIT_SHALLOW    TRUE)
-  set(EIGEN_BUILD_DOC OFF CACHE BOOL "" FORCE)
-  set(EIGEN_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-  set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "" FORCE)
-  set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  set(EIGEN_BUILD_DOC OFF)
+  set(EIGEN_BUILD_TESTING OFF)
+  set(EIGEN_BUILD_PKGCONFIG OFF)
+  set(BUILD_TESTING OFF)
   FetchContent_MakeAvailable(eigen)
 endif()
 
@@ -63,10 +81,10 @@ FetchContent_Declare(manif
   GIT_REPOSITORY https://github.com/artivis/manif.git
   GIT_TAG        0.0.5
   GIT_SHALLOW    TRUE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_BENCHMARKING OFF CACHE BOOL "" FORCE)
-set(BUILD_PYTHON_BINDINGS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF)
+set(BUILD_EXAMPLES OFF)
+set(BUILD_BENCHMARKING OFF)
+set(BUILD_PYTHON_BINDINGS OFF)
 FetchContent_MakeAvailable(manif)
 
 # manif header-only'dir. Hedef adı sürümden sürüme değişebildiği için
@@ -112,8 +130,9 @@ if(KERTERIZ_BUILD_TESTING)
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG        v1.14.0
     GIT_SHALLOW    TRUE)
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  set(gtest_force_shared_crt ON)
+  set(INSTALL_GTEST OFF)
+  set(BUILD_GMOCK ON)
   FetchContent_MakeAvailable(googletest)
   add_subdirectory(test)
 endif()
