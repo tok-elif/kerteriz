@@ -78,7 +78,9 @@ Bağımlılıklar: Eigen 3.4 (sistem; yoksa indirilir), [manif](https://github.c
 | [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) | Çerçeve, kuaterniyon, `J_res`, Joseph, zaman, birim |
 | [`docs/INTERFACES.md`](docs/INTERFACES.md) | `kerteriz_core` arayüz sözleşmesi |
 | [`docs/INTEGRATION.md`](docs/INTEGRATION.md) | Yeni bir platforma entegrasyon |
-| [`docs/design/DECISIONS.md`](docs/design/DECISIONS.md) | ADR-1…23 |
+| [`docs/design/DECISIONS.md`](docs/design/DECISIONS.md) | ADR-1…23 — dizin ve henüz bölünmemiş kararlar |
+| [`docs/design/ADR-0001-ros-free-core.md`](docs/design/ADR-0001-ros-free-core.md) | ADR-1 · ROS'suz kestirim çekirdeği |
+| [`docs/design/ADR-0002-se23-state.md`](docs/design/ADR-0002-se23-state.md) | ADR-2 · Durum SE₂(3) × R⁶ üzerinde |
 | [`docs/PHASE0.md`](docs/PHASE0.md) | Aktif faz planı |
 | [`CLAUDE.md`](CLAUDE.md) | Katkıda bulunan ajanlar için kurallar |
 
