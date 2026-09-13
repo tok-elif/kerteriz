@@ -253,8 +253,12 @@ jobs:
       #
       # Eskiden dokuman yarisi yalnizca RAPORLUYORDU, cunku muafiyet
       # mekanizmasi makine-okunur degildi. Artik oyle; sert kapiya cevrildi.
+      # Kapının kendisi bozulursa hiçbir şey uyarmaz, her şey yeşil kalır.
+      # Bu yüzden gerçek taramadan ÖNCE tarayıcının kendi regresyon testi koşar.
       - name: Denetim ⑤ — doküman ve kod tutarlılığı
-        run: python3 tools/check_docs.py
+        run: |
+          python3 tools/check_docs.py --self-test
+          python3 tools/check_docs.py
 
       - name: ADR numaraları kesintisiz
         run: |

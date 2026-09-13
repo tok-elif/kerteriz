@@ -112,12 +112,28 @@ def dokumani_tara() -> tuple[list[str], list[Bolge]]:
     """Dokuman tarafi: yalnizca acik isaretlenmis bolgeler muaftir."""
     ihlaller: list[str] = []
     tum_bolgeler: list[Bolge] = []
-
     for yol in izlenen_dosyalar("*.md"):
+        i, b = belge_tara(yol, satirlar(yol))
+        ihlaller.extend(i)
+        tum_bolgeler.extend(b)
+    return ihlaller, tum_bolgeler
+
+
+def belge_tara(yol: str, belge: list[str]) -> tuple[list[str], list[Bolge]]:
+    """Tek bir dokumani tarar.
+
+    Dosya okumasindan AYRIDIR: oz-test (--self-test) ayni kod yolunu sentetik
+    belgelerle kosturabilsin diye. Tarayiciyi test eden bir testin, tarayicinin
+    kendisinden farkli bir yol izlemesi anlamsiz olurdu.
+    """
+    ihlaller: list[str] = []
+    tum_bolgeler: list[Bolge] = []
+
+    if True:
         acik: Bolge | None = None
         cit_icinde = False
 
-        for no, satir in enumerate(satirlar(yol), 1):
+        for no, satir in enumerate(belge, 1):
             # Cit (```) icinde isaretci TANINMAZ. Isaretci zaten citin icine
             # konamaz — orada render edilir, gizlenmez — bu yuzden cit icindeki
             # bir isaretci ancak sozdiziminin KENDISINI anlatan bir ornektir
@@ -153,13 +169,22 @@ def dokumani_tara() -> tuple[list[str], list[Bolge]]:
                 and satir.strip().startswith(MUAF_BASLA)
                 and MUAF_BITIR not in satir
             ):
+                govde = satir.strip()
+                # Kor kesim yapilmaz: '-->' yoksa sondan uc karakter atmak
+                # sebebi bozar ve kapanmamis isaretciyi sessizce kabul ederdi.
+                # Satir ici bicimdeki ayni acik burada da kapatilir.
+                if not govde.endswith("-->"):
+                    ihlaller.append(
+                        f"{yol}:{no}: muafiyet blok isaretcisi kapatilmamis ('-->' yok)"
+                    )
+                    continue
                 if acik is not None:
                     ihlaller.append(
                         f"{yol}:{no}: ic ice muafiyet bolgesi "
                         f"(onceki {acik.basla}. satirda acildi)"
                     )
                     continue
-                sebep = satir.strip()[len(MUAF_BASLA) : -len("-->")].strip()
+                sebep = govde[len(MUAF_BASLA) : -len("-->")].strip()
                 if not sebep:
                     ihlaller.append(f"{yol}:{no}: muafiyet bolgesi sebepsiz acilmis")
                 acik = Bolge(dosya=yol, basla=no, sebep=sebep)
@@ -189,13 +214,9 @@ def dokumani_tara() -> tuple[list[str], list[Bolge]]:
     return ihlaller, tum_bolgeler
 
 
-def main() -> int:
-    ihlaller = kodu_tara()
-    dok_ihlaller, bolgeler = dokumani_tara()
-    ihlaller.extend(dok_ihlaller)
-
-    # Bos bolge = tasinmis veya silinmis metinden arta kalan muafiyet.
-    # Muafiyet yuzeyinin sessizce buyumesine izin verilmez.
+def bolge_bulgulari(bolgeler: list[Bolge]) -> list[str]:
+    """Muafiyet yuzeyini dar tutan iki kural."""
+    ihlaller: list[str] = []
     for b in bolgeler:
         if not b.yakalanan:
             ihlaller.append(
@@ -203,12 +224,152 @@ def main() -> int:
                 f"— kaldirilmali ({b.sebep})"
             )
             continue
-        adsiz = sorted({s for s in b.yakalanan if s not in b.sebep})
-        for sembol in adsiz:
+        for sembol in sorted({s for s in b.yakalanan if s not in b.sebep}):
             ihlaller.append(
                 f"{b.dosya}:{b.basla}: muafiyetin sebebi '{sembol}' sembolunu "
                 f"saymiyor — muafiyet ancak adi gecen sembolleri kapsar"
             )
+    return ihlaller
+
+
+# -----------------------------------------------------------------------------
+# Oz-test — tarayicinin kendi regresyon testi.
+#
+# Denetim (5) bir KAPIDIR; kapinin kendisi bozulursa hicbir sey uyarmaz, her sey
+# yesil kalir. Bu proje o sinif hatayi birkac kez yasadi. Her ihlal sinifi
+# burada kalici olarak kilitlenir; CI gercek taramadan ONCE bunu kosturur.
+# -----------------------------------------------------------------------------
+
+OZ_TEST_VAKALARI: tuple[tuple[str, list[str], str], ...] = (
+    (
+        "muaf olmayan sembol",
+        ["Backend `S.inverse()` cagirir."],
+        "muaf olmayan yasakli sembol",
+    ),
+    (
+        "kapanmayan blok acilisi",
+        [
+            "<!-- denetim5:muaf .inverse() — kapanmiyor",
+            "`S.inverse()` yasaktir.",
+            "<!-- denetim5:muaf-son -->",
+        ],
+        "blok isaretcisi kapatilmamis",
+    ),
+    (
+        "kapanmayan satir ici isaretci",
+        ["`S.inverse()` yasak. <!-- denetim5:muaf-satir .inverse() — kapanmiyor"],
+        "satir ici muafiyet isaretcisi kapatilmamis",
+    ),
+    (
+        "kapatilmamis blok",
+        ["<!-- denetim5:muaf .inverse() — sebep -->", "`S.inverse()` yasaktir."],
+        "muafiyet bolgesi kapatilmamis",
+    ),
+    (
+        "acilmamis blok kapatiliyor",
+        ["<!-- denetim5:muaf-son -->"],
+        "acilmamis muafiyet bolgesi",
+    ),
+    (
+        "sebepsiz blok",
+        [
+            "<!-- denetim5:muaf -->",
+            "`S.inverse()` yasaktir.",
+            "<!-- denetim5:muaf-son -->",
+        ],
+        "sebepsiz acilmis",
+    ),
+    (
+        "ic ice blok",
+        [
+            "<!-- denetim5:muaf .inverse() — dis -->",
+            "<!-- denetim5:muaf .inverse() — ic -->",
+            "`S.inverse()` yasaktir.",
+            "<!-- denetim5:muaf-son -->",
+        ],
+        "ic ice muafiyet bolgesi",
+    ),
+)
+
+# Bolge kurallari ayri kosar: bunlar tarama degil, muafiyet yuzeyi kurallaridir.
+OZ_TEST_BOLGE_VAKALARI: tuple[tuple[str, list[str], str], ...] = (
+    (
+        "bos blok muafiyeti",
+        [
+            "<!-- denetim5:muaf .inverse() — artik bir sey yok -->",
+            "siradan metin",
+            "<!-- denetim5:muaf-son -->",
+        ],
+        "hicbir yasakli sembol icermiyor",
+    ),
+    (
+        # Asil regresyon: isaretcinin KENDISI taranirsa bu vaka "dolu" gorunur.
+        "bos satir ici muafiyet (sembol yalnizca isaretcide)",
+        ["Gercek sembol yok. <!-- denetim5:muaf-satir .inverse() — uydurma -->"],
+        "hicbir yasakli sembol icermiyor",
+    ),
+    (
+        "sebep sembolu saymiyor",
+        [
+            "<!-- denetim5:muaf std::span — yalnizca span -->",
+            "Ama `S.inverse()` da var.",
+            "<!-- denetim5:muaf-son -->",
+        ],
+        "sembolunu saymiyor",
+    ),
+)
+
+OZ_TEST_TEMIZ: tuple[tuple[str, list[str]], ...] = (
+    ("dogru blok muafiyeti", [
+        "<!-- denetim5:muaf .inverse() — yasagi anlatan uyari -->",
+        "`S.inverse()` yasaktir.",
+        "<!-- denetim5:muaf-son -->",
+    ]),
+    ("dogru satir ici muafiyet", [
+        "| Kovaryans | `S.inverse()` yasak <!-- denetim5:muaf-satir .inverse() — kural --> |",
+    ]),
+    ("cit icindeki isaretci ornegi taninmaz", [
+        "```",
+        "<!-- denetim5:muaf <semboller> — <sebep> -->",
+        "```",
+    ]),
+    ("yasakli sembol yok", ["Siradan bir cumle."]),
+)
+
+
+def oz_test() -> int:
+    hatalar: list[str] = []
+
+    def bulgular(belge: list[str]) -> list[str]:
+        i, b = belge_tara("<oz-test>", belge)
+        return i + bolge_bulgulari(b)
+
+    for ad, belge, beklenen in OZ_TEST_VAKALARI + OZ_TEST_BOLGE_VAKALARI:
+        cikan = bulgular(belge)
+        if not any(beklenen in x for x in cikan):
+            hatalar.append(f"'{ad}' yakalanmadi; beklenen '{beklenen}', cikan: {cikan}")
+
+    for ad, belge in OZ_TEST_TEMIZ:
+        cikan = bulgular(belge)
+        if cikan:
+            hatalar.append(f"'{ad}' temiz olmaliydi; cikan: {cikan}")
+
+    toplam = len(OZ_TEST_VAKALARI) + len(OZ_TEST_BOLGE_VAKALARI) + len(OZ_TEST_TEMIZ)
+    if hatalar:
+        print(f"Oz-test DUSTU — {len(hatalar)}/{toplam} vaka:")
+        for h in hatalar:
+            print(f"  {h}")
+        return 1
+    print(f"Oz-test temiz — {toplam} vaka.")
+    return 0
+
+
+def main() -> int:
+    ihlaller = kodu_tara()
+    dok_ihlaller, bolgeler = dokumani_tara()
+    ihlaller.extend(dok_ihlaller)
+
+    ihlaller.extend(bolge_bulgulari(bolgeler))
 
     print(f"Taranan yasakli sembol: {len(YASAKLI_SEMBOLLER)}")
     print(f"Muafiyet bolgesi: {len(bolgeler)}")
@@ -228,4 +389,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        sys.exit(oz_test())
     sys.exit(main())
