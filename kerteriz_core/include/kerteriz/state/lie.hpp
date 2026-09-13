@@ -94,6 +94,15 @@ inline SE23 plus(const SE23& x, const TangentVec& d) { return x.rplus(to_manif(d
 /// Sag cikarma:  Y (-) X = Log(X^-1 o Y).
 inline TangentVec minus(const SE23& y, const SE23& x) { return from_manif(y.rminus(x)); }
 
+/// Sag Jacobian'in tersi, bizim tegent sirasinda.
+/// Log(X o Exp(d)) ~ Log(X) + Jrinv(Log X) * d  iliskisinde gecer.
+/// S7'deki sayisal Jacobian testinin analitik referansi budur; manif tipleri
+/// core'un geri kalaninda dogrudan kullanilmasin diye burada sarmalanir.
+inline AdjointMat right_jacobian_inverse(const TangentVec& d) {
+  const AdjointMat p = tangent_permutation();
+  return p.transpose() * to_manif(d).rjacinv() * p;
+}
+
 /// Adjoint, bizim tegent sirasinda:  Ad_bizim = P^T * Ad_manif * P.
 inline AdjointMat adjoint(const SE23& x) {
   const AdjointMat p = tangent_permutation();
