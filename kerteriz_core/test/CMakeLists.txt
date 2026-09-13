@@ -14,3 +14,8 @@ add_test(NAME test_types COMMAND test_types)
 # hedef derlenmez ve build kirmizi olur.
 add_library(kerteriz_types_standalone OBJECT compile_types_standalone.cpp)
 target_link_libraries(kerteriz_types_standalone PRIVATE kerteriz::core)
+
+# S6 — SE_2(3) sarmalayici ve konvansiyon bekcileri.
+add_executable(test_lie test_lie.cpp)
+target_link_libraries(test_lie PRIVATE kerteriz::core GTest::gtest_main)
+add_test(NAME test_lie COMMAND test_lie)
