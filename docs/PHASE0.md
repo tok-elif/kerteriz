@@ -372,7 +372,7 @@ kapanış PR'ı `main`'e girdikten sonra atılır.
 
 ## 6. Faz 1'e devrederken
 
-Faz 1'in ilk işi `EskfBackend`'dir ve Faz 0'ın üç çıktısına dayanır:
+Faz 1'de `EskfBackend`, Faz 0'ın üç çıktısına dayanır:
 
 - `linear_update` → güncelleme matematiği hazır ve test edilmiş
 - `numeric_residual_jacobian` → ilk `Measurement`'ın Jacobian'ı gün içinde doğrulanır

@@ -58,7 +58,7 @@ Kendi kendine yeten tam tanım: [`docs/SPEC.md`](docs/SPEC.md)
 `NavState` → `ImuPropagator` → `EskfBackend` → `GnssPosition` → **sentetik smoke test** →
 `MeasurementBuffer` + `Estimator` → veri seti adaptörleri → `robot_localization` kıyası
 
-Faz 1'in ilk işi `EskfBackend`'dir ve Faz 0'ın üç çıktısına dayanır: `linear_update`
+Faz 1'de `EskfBackend`, Faz 0'ın üç çıktısına dayanır: `linear_update`
 (güncelleme matematiği test edilmiş), `numeric_residual_jacobian` (ilk `Measurement`'ın
 Jacobian'ı gün içinde doğrulanır), `kerteriz_sim` (sentetik veri hazır).
 
