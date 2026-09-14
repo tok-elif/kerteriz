@@ -223,13 +223,23 @@ class Measurement {
 ## 4. Filtre backend'i — `backends/`
 
 ```cpp
-/// Filtre güncellemesinin sonucu. YALNIZCA filtre seviyesi bilgisi taşır —
-/// "bayat ölçüm" veya "FDI dışladı" gibi sebepler buraya ait DEĞİLDİR (§5, ADR-19).
+/// Filtre güncellemesinin sonucu (ADR-24).
+enum class UpdateStatus {
+  kAccepted,           ///< nis dolu, state/P güncellendi
+  kChiSquareRejected,  ///< nis dolu, state/P DEĞİŞMEDİ
+  kNumericalFailure    ///< S pozitif tanımlı çözülemedi: nis BOŞ, state/P DEĞİŞMEDİ
+};
+
+/// YALNIZCA filtre seviyesi bilgisi taşır — "bayat ölçüm" veya "FDI dışladı" gibi
+/// sebepler buraya ait DEĞİLDİR (§5, ADR-19).
+///
+/// `nis` OPSİYONELDİR (ADR-24): S pozitif tanımlı çözülemediğinde rᵀ S⁻¹ r tanımsızdır.
+/// Sentinel değer (0 veya NaN) üretilmez; okuyan `status` üzerinden dallanır.
 struct UpdateResult {
-  bool   accepted;    ///< χ² kapısını geçti mi
-  Scalar nis;         ///< rᵀ S⁻¹ r
-  int    dof;         ///< = residual_dim()
-  Scalar threshold;   ///< kullanılan χ² eşiği
+  UpdateStatus          status;
+  std::optional<Scalar> nis;        ///< rᵀ S⁻¹ r — yalnızca kNumericalFailure'da boş
+  int                   dof;        ///< = residual_dim(), her durumda geçerli
+  Scalar                threshold;  ///< kullanılan χ² eşiği, her durumda geçerli
 };
 
 /// Backend'in KENDİ durumu. Bütünlük katmanını İÇERMEZ (ADR-20).
@@ -298,8 +308,16 @@ enum class RejectReason {
   kSensorExcluded,    ///< FDI dışladı                            → integrity kararı
   kOriginNotSet,      ///< coğrafi ölçüm, orijin henüz yok        → yapılandırma
   kChiSquareGate,     ///< filtre kapısı elendi                   → backend kararı
+  kNumericalFailure,  ///< innovation kovaryansı çözülemedi       → backend kararı (ADR-24)
   kCloneUnavailable   ///< gerekli klon yok veya düşürülmüş       → durum kararı
 };
+
+/// Backend sonucu → red sebebi eşlemesi (ADR-24). Backend NE OLDUĞUNU söyler,
+/// ardışık düzen NEDEN olduğunu sınıflandırır (ADR-19).
+///
+///   UpdateStatus::kAccepted          -> RejectReason::kNone
+///   UpdateStatus::kChiSquareRejected -> RejectReason::kChiSquareGate
+///   UpdateStatus::kNumericalFailure  -> RejectReason::kNumericalFailure
 
 /// Bir ölçümün ardışık düzendeki tam sonucu.
 struct ProcessingResult {

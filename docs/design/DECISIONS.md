@@ -204,6 +204,7 @@ proje ömrü uzar ve bakım bilinci görünür olur.
 | ADR-21 | sınırlar | ADR-2'nin “tanım gereği tutarlı” iddiasının kapsamı |
 | ADR-22 | netleştirir | ADR-16 (allocation-free sınırı sayısal hot path) |
 | ADR-23 | gereksinim koyar | INTERFACES §6 `compute_protection_level` / `FaultDetector` (Faz 4'te yeniden ele alınır) |
+| ADR-24 | **genişletir** | ADR-19 (`UpdateResult` sayısal başarısızlığı temsil edemiyordu) |
 
 ---
 
@@ -493,3 +494,74 @@ arayüzü **bugün değişmez** — Faz 4 açılana kadar dondurulmuş hâlleriy
 girerken ikisi de bu ADR ışığında yeniden ele alınır ve gereken genişletme ayrı bir ADR ile
 yapılır. Faz 4 planına giriş koşulu olarak şu soru eklenir: *PL'in gördüğü veri, tespit
 edilmemiş arıza hipotezlerini sınırlamaya yetiyor mu?*
+
+---
+
+## ADR-24 · `UpdateResult` sayısal başarısızlığı temsil eder · ADR-19'u genişletir
+
+> **Freeze sonrası eklenmiştir.** ADR-13…22 kod yazılmadan önce donduruldu; bu ADR Faz 1
+> `EskfBackend` uygulanırken bulunan bir arayüz boşluğunu kapatır. Bağlayıcılığı
+> diğerleriyle aynıdır.
+
+**Karar.** `UpdateResult` üç durumlu bir statü taşır ve NIS opsiyoneldir:
+
+```cpp
+enum class UpdateStatus {
+  kAccepted,           ///< nis dolu, state/P güncellendi
+  kChiSquareRejected,  ///< nis dolu, state/P DEĞİŞMEDİ
+  kNumericalFailure    ///< nis boş, state/P DEĞİŞMEDİ
+};
+
+struct UpdateResult {
+  UpdateStatus          status;
+  std::optional<Scalar> nis;
+  int                   dof;        ///< = residual_dim(), her durumda geçerli
+  Scalar                threshold;  ///< kullanılan χ² eşiği, her durumda geçerli
+};
+```
+
+`RejectReason` `kNumericalFailure` ile genişler. `FilterBackend::update` imzası
+**değişmez**; dönüş tipi aynı `UpdateResult`'tır.
+
+**Gerekçe.** Innovation kovaryansı `S = J P Jᵀ + R` pozitif tanımlı çözülemediğinde
+`NIS = rᵀ S⁻¹ r` **tanımsızdır**. Eski `UpdateResult` bu durumu temsil edemiyordu ve
+üç kaçış yolunun üçü de yanlıştı:
+
+- `nis = 0` — sahte veri. Gerçek bir sıfır NIS'ten ayırt edilemez; NIS biriktiren
+  teşhis katmanı (ADR-8, `NisMonitor`) bunu meşru bir örnek sayar ve kabul oranı
+  istatistiğini sessizce bozar.
+- `nis = NaN` — örtük sözleşme. Karşılaştırmalar sessizce `false` döner, ortalama ve
+  histogram alan kod bozulur; "hesaplanamadı" bilgisi tip sisteminde görünmez.
+- `assert` — çalışma anındaki sayısal bir hatayı süreç sonlandırmaya çevirir. `S`'in
+  tekilleşmesi bozuk bir `R`'den veya dejenere geometriden doğabilir; sahada abort
+  etmek doğru davranış değildir.
+
+`std::optional<Scalar>` "değer yok" durumunu **tipte** ifade eder; okuyanın kontrol
+etmesi zorunlu olur ve sentinel değer icat edilmez.
+
+**Neden `RejectReason`'a taşınmadı.** ADR-19 red *sebeplerinin* ardışık düzen seviyesine
+ait olduğunu söyler ve bu geçerliliğini korur. Ama `ProcessingResult`'ı Estimator üretir;
+Estimator'ün sayısal başarısızlığı bilebilmesi için backend'den bir sinyal alması gerekir
+ve aldığı tek şey `UpdateResult`'tır. Yani sebep katmanlaması korunurken backend'in
+**filtre seviyesindeki** sonucu tam olarak raporlayabilmesi gerekir. ADR-19'un ayrımı
+bozulmaz: backend *ne olduğunu* söyler, ardışık düzen *neden* olduğunu sınıflandırır.
+
+Estimator eşlemesi:
+
+| `UpdateStatus` | `RejectReason` |
+|---|---|
+| `kAccepted` | `kNone` |
+| `kChiSquareRejected` | `kChiSquareGate` |
+| `kNumericalFailure` | `kNumericalFailure` |
+
+**Alternatifler.** *`update()` → `std::optional<UpdateResult>`* — `dof` ve `threshold`
+bilgisini de yok eder; oysa ikisi sayısal başarısızlıkta da bilinir ve teşhis için
+değerlidir. *`UpdateResult`'a `bool computable` eklemek* — `nis`'in geçerliliğini ayrı bir
+alana bağlar, yani aynı örtük sözleşme sorunu bu kez iki alan arasında doğar.
+*Pozitif tanımlı `R`'yi `Measurement` ön koşulu yapmak* — `R` iyi tanımlıyken bile `P`
+bozulması veya dejenere geometri `S`'i tekilleştirebilir, dolayısıyla sorunu kapatmaz.
+
+**Sonuçlar.** `INTERFACES.md` §4 ve §5 bu kararla hizalanır. `UpdateResult` okuyan her
+yer `status` üzerinden dallanır; `nis` doğrudan okunamaz. `dof` ve `threshold` her üç
+durumda da doldurulur — sayısal başarısızlıkta bile hangi kapının uygulanmak istendiği
+teşhis edilebilir kalır.
