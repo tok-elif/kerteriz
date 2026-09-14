@@ -42,3 +42,8 @@ add_executable(test_measurement_registry
 target_include_directories(test_measurement_registry PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_measurement_registry PRIVATE kerteriz::core GTest::gtest_main)
 add_test(NAME test_measurement_registry COMMAND test_measurement_registry)
+
+# F1.1 — NavState: sabit cekirdek + sinirli kapasiteli augmentation.
+add_executable(test_nav_state test_nav_state.cpp)
+target_link_libraries(test_nav_state PRIVATE kerteriz::core GTest::gtest_main)
+add_test(NAME test_nav_state COMMAND test_nav_state)
