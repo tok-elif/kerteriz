@@ -385,28 +385,131 @@ TEST(NavState, PlusPreservesLayout) {
   EXPECT_EQ(y.clone_offset(id), kCoreDof + 1);
 }
 
-TEST(NavState, AugmentValuesMoveWithCompaction) {
-  // drop_clone yalnizca ofsetleri degil DEGERLERI de tasimali; aksi halde
-  // hayatta kalan klonun degeri silinen klonunkine kayar.
+/// Verilen poz uzerinde bir klon push edilmis durum. Klon degerini DOGRUDAN
+/// okuyacak bir erisimci yok (donmus API); bu yuzden beklenen deger ayni
+/// sekilde insa edilip minus() ile karsilastirilir. Tamamen kara kutu.
+NavState klonlu(const SE23& poz) {
   NavState x;
-  const CloneId a = x.push_clone();
-  const CloneId b = x.push_clone();
+  x.extended_pose() = poz;
+  x.push_clone();
+  return x;
+}
+
+SE23 poz_kur(const Eigen::Quaterniond& q, const Vec3& p, const Vec3& v = Vec3::Zero()) {
+  return SE23(p, q, v);
+}
+
+TEST(NavState, PushCloneCapturesCurrentPose) {
+  // Klon O ANDAKI pozu tasimali. Ayni pozda push edilen iki klon ozdes,
+  // birim pozda push edilen farkli olmali.
+  const Eigen::Quaterniond q(Eigen::AngleAxisd(0.7, Vec3(0.2, -0.5, 0.84).normalized()));
+  const Vec3 p(3.0, -4.0, 5.0);
+  const SE23 poz = poz_kur(q, p, Vec3(1.0, 2.0, 3.0));
+
+  const NavState a = klonlu(poz);
+  const NavState b = klonlu(poz);
+  NavState birimden = klonlu(SE23::Identity());
+
+  const int ofs = a.clone_offset(CloneId{0});
+  EXPECT_LT(a.minus(b).segment(ofs, kCloneDof).norm(), 1e-12) << "ayni poz farkli klon uretti";
+
+  // Birim pozda klonlanan durumun cekirdegini ayni poza getir; geriye yalnizca
+  // KLON farki kalir. Klon poz kopyalamasaydi bu da sifir olurdu.
+  birimden.extended_pose() = poz;
+  EXPECT_GT(a.minus(birimden).segment(ofs, kCloneDof).norm(), 1e-3)
+      << "klon push anindaki pozu kopyalamamis";
+}
+
+TEST(NavState, CloneKeepsHistoricValueWhenCurrentPoseChanges) {
+  const Eigen::Quaterniond q1(Eigen::AngleAxisd(0.4, Vec3::UnitZ()));
+  const SE23 poz1 = poz_kur(q1, Vec3(1.0, 2.0, 3.0));
+  const Eigen::Quaterniond q2(Eigen::AngleAxisd(-1.1, Vec3::UnitY()));
+  const SE23 poz2 = poz_kur(q2, Vec3(-7.0, 8.0, 0.5));
+
+  NavState x = klonlu(poz1);
+  const NavState referans = klonlu(poz1); // klon poz1'de dondu
+
+  x.extended_pose() = poz2; // guncel poz degisti, klon DEGISMEMELI
+
+  const int ofs = x.clone_offset(CloneId{0});
+  const StateVec d = x.minus(referans);
+
+  EXPECT_LT(d.segment(ofs, kCloneDof).norm(), 1e-12) << "klon guncel pozla birlikte kaydi";
+  EXPECT_GT(d.head(9).norm(), 1e-3) << "cekirdek degismeliydi";
+}
+
+TEST(NavState, ClonePlusMinusRoundTrip) {
+  const Eigen::Quaterniond q(Eigen::AngleAxisd(0.9, Vec3(1.0, 1.0, -0.3).normalized()));
+  const NavState x = klonlu(poz_kur(q, Vec3(2.0, -1.0, 4.0)));
+  const int ofs = x.clone_offset(CloneId{0});
 
   StateVec d = StateVec::Zero();
-  d[x.clone_offset(a)] = 1.0;
-  d[x.clone_offset(b)] = 2.0;
-  NavState y = x.plus(d);
+  d.segment(ofs, kCloneDof) << 0.13, -0.21, 0.07, 0.9, -1.4, 2.2;
 
-  const StateVec once = y.minus(x);
-  const Scalar b_degeri = once[y.clone_offset(b)];
-  ASSERT_NEAR(b_degeri, 2.0, 1e-15);
+  const StateVec geri = x.plus(d).minus(x);
+  for (int i = 0; i < kCloneDof; ++i) {
+    EXPECT_NEAR(geri[ofs + i], d[ofs + i], 1e-9) << "klon bileseni " << i;
+  }
+}
 
-  y.drop_clone(a);
-  NavState referans = x;
-  referans.drop_clone(a);
+TEST(NavState, CloneOrientationPerturbationIsRightNotLeft) {
+  // Sag-plus: X o Exp(tau). Saf bir dtheta icin klonun KONUMU DEGISMEZ.
+  // Sol-plus olsaydi (Exp(tau) o X) konum donerdi.
+  const Eigen::Quaterniond q(Eigen::AngleAxisd(0.55, Vec3(0.3, 0.4, 0.87).normalized()));
+  const Vec3 p(6.0, -2.0, 1.5);
+  const NavState x = klonlu(poz_kur(q, p));
+  const int ofs = x.clone_offset(CloneId{0});
 
-  const StateVec sonra = y.minus(referans);
-  EXPECT_NEAR(sonra[y.clone_offset(b)], b_degeri, 1e-15) << "deger tasinmadi";
+  const Vec3 dtheta(0.25, -0.4, 0.15);
+  StateVec d = StateVec::Zero();
+  d.segment(ofs, 3) = dtheta;
+  const NavState y = x.plus(d);
+
+  const Eigen::Quaterniond delta_q(Eigen::AngleAxisd(dtheta.norm(), dtheta.normalized()));
+
+  // Sag beklentisi: yonelim q * dq, konum AYNI.
+  NavState sag = klonlu(poz_kur(q * delta_q, p));
+  // Sol beklentisi: yonelim dq * q, konum dq * p.
+  NavState sol = klonlu(poz_kur(delta_q * q, delta_q * p));
+
+  // Cekirdekleri esitle ki fark yalnizca klondan gelsin.
+  sag.extended_pose() = y.extended_pose();
+  sol.extended_pose() = y.extended_pose();
+
+  EXPECT_LT(y.minus(sag).segment(ofs, kCloneDof).norm(), 1e-9)
+      << "klon sag perturbasyon kullanmiyor";
+  EXPECT_GT(y.minus(sol).segment(ofs, kCloneDof).norm(), 1e-3) << "sol perturbasyondan ayrismiyor";
+}
+
+TEST(NavState, DropMiddleCloneKeepsSurvivorValue) {
+  // Hayatta kalan klonun DEGERI silinen klonun kimligine kaymamali.
+  const Eigen::Quaterniond q1(Eigen::AngleAxisd(0.3, Vec3::UnitX()));
+  const Eigen::Quaterniond q2(Eigen::AngleAxisd(-0.8, Vec3::UnitY()));
+  const Eigen::Quaterniond q3(Eigen::AngleAxisd(1.2, Vec3::UnitZ()));
+
+  NavState x;
+  x.extended_pose() = poz_kur(q1, Vec3(1.0, 0.0, 0.0));
+  const CloneId a = x.push_clone();
+  x.extended_pose() = poz_kur(q2, Vec3(0.0, 2.0, 0.0));
+  const CloneId b = x.push_clone();
+  x.extended_pose() = poz_kur(q3, Vec3(0.0, 0.0, 3.0));
+  const CloneId c = x.push_clone();
+
+  // Ayni gecmisi yasayan, ama ortadaki klonu hic push etmemis referans.
+  NavState referans;
+  referans.extended_pose() = poz_kur(q1, Vec3(1.0, 0.0, 0.0));
+  referans.push_clone();
+  referans.extended_pose() = poz_kur(q3, Vec3(0.0, 0.0, 3.0));
+  referans.push_clone();
+  referans.extended_pose() = x.extended_pose();
+
+  x.drop_clone(b);
+  ASSERT_EQ(x.augment_dof(), 2 * kCloneDof);
+
+  const StateVec d = x.minus(referans);
+  EXPECT_LT(d.segment(x.clone_offset(a), kCloneDof).norm(), 1e-12) << "a bozuldu";
+  EXPECT_LT(d.segment(x.clone_offset(c), kCloneDof).norm(), 1e-12)
+      << "hayatta kalan klonun degeri yanlis kimlige tasindi";
 }
 
 } // namespace
