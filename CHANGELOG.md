@@ -4,6 +4,10 @@ Biçim: [Keep a Changelog](https://keepachangelog.com/), sürümleme: [SemVer](h
 
 ## [Unreleased]
 
+### Changed
+- ADR-24: `UpdateResult` sayısal başarısızlığı temsil eder — `UpdateStatus` üç durumlu,
+  `nis` opsiyonel; `RejectReason` `kNumericalFailure` ile genişler (INTERFACES §4, §5)
+
 ## [0.1.0] - 2026-09-13
 
 Faz 0 — temel ve iskelet. Filtre henüz yoktur; bu sürüm, mimarisi dondurulmuş

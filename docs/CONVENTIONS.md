@@ -309,6 +309,9 @@ kabul bandı ≈ c ± 3σ
 **Sabit "%95–99 olmalı" kriteri kullanılmaz** — `c = 0.997` için doğru çalışan bir filtreyi
 hatalı işaretler. `kerteriz_eval` bandı `c` ve `N`'den hesaplar.
 
+`UpdateStatus::kNumericalFailure` sonuçları bu orana **girmez**: NIS tanımsız olduğu için
+o ölçüm ne kabul ne de χ² reddi sayılır (ADR-24). `N`, NIS üretilen ölçüm sayısıdır.
+
 ---
 
 ## 11. YAML yapılandırma
