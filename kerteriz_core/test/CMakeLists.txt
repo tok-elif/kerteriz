@@ -51,3 +51,14 @@ target_link_libraries(test_nav_state PRIVATE kerteriz::core GTest::gtest_main)
 # dogrulamazdi. Bu hedefte assert'ler BILEREK acik tutulur.
 target_compile_options(test_nav_state PRIVATE -UNDEBUG)
 add_test(NAME test_nav_state COMMAND test_nav_state)
+
+# F1.2 — ImuPropagator: nominal yayilim, ayrik F/Q, surec gurultusu.
+add_executable(test_imu_propagator test_imu_propagator.cpp)
+target_link_libraries(test_imu_propagator PRIVATE kerteriz::core GTest::gtest_main)
+# Eigen dinamik bellegi operator new ile DEGIL malloc ile alir; yalnizca
+# operator new saymak Eigen tahsislerini kacirir ve sahte bir 0 uretirdi.
+# Eigen'in kendi kapisi kullanilir. Kapi eigen_assert uzerinden calisir, o da
+# NDEBUG altinda susar — bu yuzden assert'ler bu hedefte acik tutulur.
+target_compile_definitions(test_imu_propagator PRIVATE EIGEN_RUNTIME_NO_MALLOC)
+target_compile_options(test_imu_propagator PRIVATE -UNDEBUG)
+add_test(NAME test_imu_propagator COMMAND test_imu_propagator)

@@ -372,4 +372,7 @@ class NavState {
   std::int32_t siradaki_klon_kimligi_ = 0;
 };
 
+/// Kapasite sabit, aktif blok active_dof() x active_dof() (INTERFACES §1).
+using NavCovariance = StateMat;
+
 } // namespace kerteriz
