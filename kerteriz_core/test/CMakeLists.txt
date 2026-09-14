@@ -66,3 +66,16 @@ target_link_libraries(test_imu_propagator PRIVATE kerteriz::core GTest::gtest_ma
 target_compile_definitions(test_imu_propagator PRIVATE EIGEN_RUNTIME_NO_MALLOC)
 target_compile_options(test_imu_propagator PRIVATE -UNDEBUG)
 add_test(NAME test_imu_propagator COMMAND test_imu_propagator)
+
+# F1.3 — chi-kare CDF/quantile (kapi esigi).
+add_executable(test_chi_square test_chi_square.cpp)
+target_link_libraries(test_chi_square PRIVATE kerteriz::core GTest::gtest_main)
+add_test(NAME test_chi_square COMMAND test_chi_square)
+
+# F1.3 — EskfBackend: predict/update/snapshot/klon kovaryansi.
+# Assert'ler ve Eigen malloc kapisi acik (olum testleri ve tahsis kapisi icin).
+add_executable(test_eskf_backend test_eskf_backend.cpp)
+target_link_libraries(test_eskf_backend PRIVATE kerteriz::core GTest::gtest_main)
+target_compile_definitions(test_eskf_backend PRIVATE EIGEN_RUNTIME_NO_MALLOC)
+target_compile_options(test_eskf_backend PRIVATE -UNDEBUG)
+add_test(NAME test_eskf_backend COMMAND test_eskf_backend)

@@ -15,8 +15,11 @@
 
 namespace {
 
+using kerteriz::innovation_nis;
 using kerteriz::JacMat;
+using kerteriz::kMaxResidualDim;
 using kerteriz::linear_update;
+using kerteriz::LinearUpdateResult;
 using kerteriz::ResMat;
 using kerteriz::ResVec;
 using kerteriz::Scalar;
@@ -293,6 +296,95 @@ TEST(LinearUpdate, LeavesCovarianceUntouchedWhenInnovationNotPositiveDefinite) {
   EXPECT_FALSE(sonuc.spd_ok);
   EXPECT_EQ(d.cwiseAbs().maxCoeff(), 0.0) << "bozuk cozumde delta sifirlanmadi";
   EXPECT_EQ((p - p_once).cwiseAbs().maxCoeff(), 0.0) << "bozuk cozumde P kirletildi";
+}
+
+// -----------------------------------------------------------------------------
+// F1.3 — NIS-only yardimci
+//
+// chi-kare kapisi MUTASYONDAN ONCE karar vermek zorunda; linear_update() ise
+// NIS ile birlikte P'yi de gunceller. innovation_nis() ayni S'i kurar, ayni
+// SPD olcutunu kullanir ve P'ye DOKUNMAZ.
+// -----------------------------------------------------------------------------
+
+TEST(InnovationNis, MatchesLinearUpdateNisForSameInputs) {
+  std::mt19937 rng(4242U);
+  std::normal_distribution<Scalar> n(0.0, 1.0);
+  for (int deneme = 0; deneme < 200; ++deneme) {
+    const int dim = 1 + (deneme % kMaxResidualDim);
+    const int dof = 15;
+
+    JacMat j = JacMat::Zero();
+    ResVec r = ResVec::Zero();
+    ResMat rc = ResMat::Zero();
+    StateMat p = StateMat::Zero();
+
+    for (int i = 0; i < dim; ++i) {
+      r[i] = n(rng);
+      for (int k = 0; k < dof; ++k) {
+        j(i, k) = n(rng);
+      }
+    }
+    // Simetrik pozitif tanimli P ve R.
+    Eigen::MatrixXd a = Eigen::MatrixXd::Zero(dof, dof);
+    for (int i = 0; i < dof; ++i) {
+      for (int k = 0; k < dof; ++k) {
+        a(i, k) = n(rng);
+      }
+    }
+    p.topLeftCorner(dof, dof) = a * a.transpose() + Eigen::MatrixXd::Identity(dof, dof) * 0.5;
+    rc.topLeftCorner(dim, dim) = Eigen::MatrixXd::Identity(dim, dim) * (0.2 + 0.1 * dim);
+
+    const StateMat p_once = p;
+    const LinearUpdateResult sadece_nis = innovation_nis(j, r, rc, dim, dof, p);
+
+    EXPECT_LT((p - p_once).cwiseAbs().maxCoeff(), 0.0 + 1e-18) << "innovation_nis P'yi degistirdi";
+
+    StateVec delta = StateVec::Zero();
+    const LinearUpdateResult tam = linear_update(j, r, rc, dim, dof, p, delta);
+
+    ASSERT_TRUE(sadece_nis.spd_ok);
+    ASSERT_EQ(sadece_nis.spd_ok, tam.spd_ok);
+    EXPECT_NEAR(sadece_nis.nis, tam.nis, 1e-12 * std::max(Scalar(1), std::abs(tam.nis)))
+        << "dim=" << dim << " deneme=" << deneme;
+  }
+}
+
+TEST(InnovationNis, UsesSameSpdCriterionAsLinearUpdate) {
+  // Tekil S: J = 0, P = 0, R = 0, r != 0. linear_update bunu reddediyor;
+  // innovation_nis de reddetmeli, aksi halde kapi cozulemeyen bir S'e NIS
+  // uretmis olurdu.
+  const JacMat j = JacMat::Zero();
+  ResVec r = ResVec::Zero();
+  r[0] = 1.0;
+  const ResMat rc = ResMat::Zero();
+  StateMat p = StateMat::Zero();
+
+  const LinearUpdateResult sadece_nis = innovation_nis(j, r, rc, 1, 15, p);
+  EXPECT_FALSE(sadece_nis.spd_ok) << "tekil S kabul edildi";
+
+  StateVec delta = StateVec::Zero();
+  const LinearUpdateResult tam = linear_update(j, r, rc, 1, 15, p, delta);
+  EXPECT_EQ(sadece_nis.spd_ok, tam.spd_ok) << "iki yol farkli SPD karari verdi";
+}
+
+TEST(InnovationNis, ScalarGaussianClosedForm) {
+  // Tek boyut: S = P + R, NIS = r^2 / (P + R).
+  const Scalar p_deger = 2.0;
+  const Scalar r_gurultu = 0.5;
+  const Scalar artik = 1.3;
+
+  JacMat j = JacMat::Zero();
+  j(0, 0) = -1.0; // J_res = -H
+  ResVec r = ResVec::Zero();
+  r[0] = artik;
+  ResMat rc = ResMat::Zero();
+  rc(0, 0) = r_gurultu;
+  StateMat p = StateMat::Zero();
+  p(0, 0) = p_deger;
+
+  const LinearUpdateResult out = innovation_nis(j, r, rc, 1, 1, p);
+  ASSERT_TRUE(out.spd_ok);
+  EXPECT_NEAR(out.nis, artik * artik / (p_deger + r_gurultu), 1e-12);
 }
 
 } // namespace
