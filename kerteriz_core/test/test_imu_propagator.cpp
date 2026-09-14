@@ -175,6 +175,19 @@ TEST(ImuPropagator, BiasesAreConstantUnderNominalPropagation) {
   EXPECT_LT((x.accel_bias() - ivme).norm(), 1e-15);
 }
 
+TEST(ImuPropagatorDeathTest, NegativeDtIsPreconditionViolation) {
+  // Sozlesme: dt < 0 cagiran hatasidir. ADR-5 sirasiz olcumu tampon
+  // seviyesinde geri sararak cozer, dolayisiyla negatif dt propagator'a
+  // ULASMAMALIDIR. Hedefte -UNDEBUG var; assert gercekten calisir.
+  EXPECT_DEATH(
+      {
+        NavState x = ornek_durum();
+        NavCovariance p = NavCovariance::Zero();
+        sessiz().propagate(x, p, olcum(Vec3::Zero(), Vec3(0.0, 0.0, kG)), -0.01);
+      },
+      "");
+}
+
 TEST(ImuPropagator, ZeroDtIsNoOp) {
   // Sozlesme: dt = 0 hicbir sey yapmaz. F = I, Q = 0.
   NavState x = ornek_durum();

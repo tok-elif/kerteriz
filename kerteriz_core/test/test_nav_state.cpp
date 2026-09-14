@@ -3,6 +3,7 @@
 
 #include "kerteriz/state/nav_state.hpp"
 
+#include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <cstdlib>
 #include <gtest/gtest.h>
@@ -658,12 +659,28 @@ void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 
 namespace {
 
+TEST(EigenAllocGuardDeathTest, GuardIsWiredInThisBinary) {
+  // Eigen dinamik bellegi operator new ile DEGIL malloc ile alir; bu yuzden
+  // asagidaki test Eigen'in kendi kapisini kullanir. Kapi bir DERLEME
+  // TANIMINA baglidir (EIGEN_RUNTIME_NO_MALLOC): tanim eksik olsaydi
+  // set_is_malloc_allowed sessiz bir no-op olur ve 0-tahsis testi bos yere
+  // gecerdi. Kapinin BU binary'de gercekten kapattigini dogrular.
+  EXPECT_DEATH(
+      {
+        Eigen::internal::set_is_malloc_allowed(false);
+        Eigen::MatrixXd m(64, 64);
+        m.setZero();
+      },
+      "");
+}
+
 TEST(NavState, LifecycleDoesNotAllocate) {
   NavState x;
   StateVec d = StateVec::Zero();
 
   {
     const TahsisKapsami kapsam;
+    Eigen::internal::set_is_malloc_allowed(false);
     x.register_calibration("wheel_scale", 1);
     const CloneId a = x.push_clone();
     const CloneId b = x.push_clone();
@@ -674,9 +691,10 @@ TEST(NavState, LifecycleDoesNotAllocate) {
     const NavState y = x.plus(d);
     x.drop_clone(a);
     (void)y.active_dof();
+    Eigen::internal::set_is_malloc_allowed(true);
   }
 
-  EXPECT_EQ(tahsis_adedi, 0) << "durum yasam dongusu heap'e gitti";
+  EXPECT_EQ(tahsis_adedi, 0) << "durum yasam dongusu operator new'e gitti";
 }
 
 TEST(NavState, StorageIsFixedSize) {
