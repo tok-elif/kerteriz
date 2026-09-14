@@ -46,4 +46,8 @@ add_test(NAME test_measurement_registry COMMAND test_measurement_registry)
 # F1.1 — NavState: sabit cekirdek + sinirli kapasiteli augmentation.
 add_executable(test_nav_state test_nav_state.cpp)
 target_link_libraries(test_nav_state PRIVATE kerteriz::core GTest::gtest_main)
+# minus()'un duzen on kosulu assert ile zorlanir. Release NDEBUG tanimlar ve
+# assert'i sustururdu; o zaman on kosul testi calisir gorunup hicbir sey
+# dogrulamazdi. Bu hedefte assert'ler BILEREK acik tutulur.
+target_compile_options(test_nav_state PRIVATE -UNDEBUG)
 add_test(NAME test_nav_state COMMAND test_nav_state)

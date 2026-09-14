@@ -483,33 +483,139 @@ TEST(NavState, CloneOrientationPerturbationIsRightNotLeft) {
 
 TEST(NavState, DropMiddleCloneKeepsSurvivorValue) {
   // Hayatta kalan klonun DEGERI silinen klonun kimligine kaymamali.
+  //
+  // Karsilastirilan durumlar AYNI duzende olmak zorunda (minus() on kosulu),
+  // yani referanslar da uc klon push edip ortadakini dusurerek {0, 2}
+  // kimliklerini uretir. Ayrimi saglayan sey ucuncu klonun POZUDUR.
   const Eigen::Quaterniond q1(Eigen::AngleAxisd(0.3, Vec3::UnitX()));
   const Eigen::Quaterniond q2(Eigen::AngleAxisd(-0.8, Vec3::UnitY()));
   const Eigen::Quaterniond q3(Eigen::AngleAxisd(1.2, Vec3::UnitZ()));
+  const Vec3 p1(1.0, 0.0, 0.0);
+  const Vec3 p2(0.0, 2.0, 0.0);
+  const Vec3 p3(0.0, 0.0, 3.0);
 
-  NavState x;
-  x.extended_pose() = poz_kur(q1, Vec3(1.0, 0.0, 0.0));
-  const CloneId a = x.push_clone();
-  x.extended_pose() = poz_kur(q2, Vec3(0.0, 2.0, 0.0));
-  const CloneId b = x.push_clone();
-  x.extended_pose() = poz_kur(q3, Vec3(0.0, 0.0, 3.0));
-  const CloneId c = x.push_clone();
+  auto kur = [&](const Eigen::Quaterniond& q_ucuncu, const Vec3& p_ucuncu) {
+    NavState n;
+    n.extended_pose() = poz_kur(q1, p1);
+    n.push_clone(); // kimlik 0
+    n.extended_pose() = poz_kur(q2, p2);
+    const CloneId orta = n.push_clone(); // kimlik 1
+    n.extended_pose() = poz_kur(q_ucuncu, p_ucuncu);
+    n.push_clone(); // kimlik 2
+    n.drop_clone(orta);
+    return n;
+  };
 
-  // Ayni gecmisi yasayan, ama ortadaki klonu hic push etmemis referans.
-  NavState referans;
-  referans.extended_pose() = poz_kur(q1, Vec3(1.0, 0.0, 0.0));
-  referans.push_clone();
-  referans.extended_pose() = poz_kur(q3, Vec3(0.0, 0.0, 3.0));
-  referans.push_clone();
-  referans.extended_pose() = x.extended_pose();
+  NavState x = kur(q3, p3);
+  const NavState dogru = kur(q3, p3);
+  const NavState bozuk = kur(q2, p2); // ucuncu klon yanlis pozda
 
-  x.drop_clone(b);
   ASSERT_EQ(x.augment_dof(), 2 * kCloneDof);
+  const int ofs_a = x.clone_offset(CloneId{0});
+  const int ofs_c = x.clone_offset(CloneId{2});
+  ASSERT_EQ(ofs_c, kCoreDof + kCloneDof) << "hayatta kalan klon asagi kaymadi";
 
-  const StateVec d = x.minus(referans);
-  EXPECT_LT(d.segment(x.clone_offset(a), kCloneDof).norm(), 1e-12) << "a bozuldu";
-  EXPECT_LT(d.segment(x.clone_offset(c), kCloneDof).norm(), 1e-12)
+  const StateVec d = x.minus(dogru);
+  EXPECT_LT(d.segment(ofs_a, kCloneDof).norm(), 1e-12) << "ilk klon bozuldu";
+  EXPECT_LT(d.segment(ofs_c, kCloneDof).norm(), 1e-12)
       << "hayatta kalan klonun degeri yanlis kimlige tasindi";
+
+  // Ayrim testi: ucuncu klon farkli pozda olsaydi fark GORUNMELIYDI.
+  EXPECT_GT(x.minus(bozuk).segment(ofs_c, kCloneDof).norm(), 1e-3)
+      << "karsilastirma klon degerine duyarli degil";
+}
+
+TEST(NavStateDeathTest, MinusRejectsDifferentCalibrationLayoutWithSameDof) {
+  NavState a;
+  a.register_calibration("tek_blok", 2);
+
+  NavState b;
+  b.register_calibration("birinci", 1);
+  b.register_calibration("ikinci", 1);
+
+  ASSERT_EQ(a.active_dof(), b.active_dof()) << "test kurulumu ayni toplam DoF varsayiyor";
+  EXPECT_DEATH(static_cast<void>(a.minus(b)), "");
+}
+
+TEST(NavStateDeathTest, MinusRejectsCalibrationVersusCloneWithSameDof) {
+  // kCloneDof kadar Oklidyen kalibrasyon ile bir poz klonu ayni toplam boyutu
+  // verir; cikarma sessizce SE(3) farkini Oklidyen fark sanarak yapardi.
+  NavState a;
+  a.register_calibration("dolgu", kCloneDof);
+
+  NavState b;
+  b.push_clone();
+
+  ASSERT_EQ(a.active_dof(), b.active_dof());
+  EXPECT_DEATH(static_cast<void>(a.minus(b)), "");
+}
+
+TEST(NavStateDeathTest, MinusRejectsCalibrationVersusCloneWhenNamesCannotDiscriminate) {
+  // Adsiz bir kalibrasyon ile bir klon ayni dof'a ve ayni (bos) ada sahiptir,
+  // yani ad kontrolu burada AYIRT EDEMEZ. Yakalayan sey blok sayaci
+  // invaryantidir: kalici_blok_sayisi_ 1'e karsi 0.
+  //
+  // Bu ayni zamanda `kind` kontrolunun neden BAGIMSIZ olarak dusurulemedigini
+  // gosterir: kalibrasyonlar her zaman [0, kalici_blok_sayisi_) araligini,
+  // klonlar sonrasini isgal eder; iki sayac esitse turler de konumsal olarak
+  // esittir. kind karsilastirmasi yine de tutulur — o invaryant bir gun
+  // bozulursa sessiz kalmasin diye.
+  NavState a;
+  a.register_calibration({}, kCloneDof);
+
+  NavState b;
+  b.push_clone();
+
+  ASSERT_EQ(a.active_dof(), b.active_dof());
+  EXPECT_DEATH(static_cast<void>(a.minus(b)), "");
+}
+
+TEST(NavStateDeathTest, MinusRejectsDifferentCalibrationNames) {
+  NavState a;
+  a.register_calibration("wheel_scale", 1);
+
+  NavState b;
+  b.register_calibration("time_offset", 1);
+
+  ASSERT_EQ(a.active_dof(), b.active_dof());
+  EXPECT_DEATH(static_cast<void>(a.minus(b)), "");
+}
+
+TEST(NavStateDeathTest, MinusRejectsDifferentCloneIds) {
+  // Ayni sayida klon ama farkli kimlikler: segmentler ayni yerde, anlamlari
+  // farkli.
+  NavState a;
+  a.push_clone();
+
+  NavState b;
+  const CloneId ilk = b.push_clone();
+  b.push_clone();
+  b.drop_clone(ilk); // geriye kimligi 1 olan klon kalir
+
+  ASSERT_EQ(a.active_dof(), b.active_dof());
+  EXPECT_DEATH(static_cast<void>(a.minus(b)), "");
+}
+
+TEST(NavState, MinusAcceptsIdenticalLayoutAndRoundTrips) {
+  // Gercek ayni duzen: kopya ve plus() sonucu normal round-trip'e devam eder.
+  NavState x = ornek_durum();
+  x.register_calibration("wheel_scale", 1);
+  x.register_calibration("time_offset", 2);
+  x.push_clone();
+  x.push_clone();
+
+  const NavState kopya = x;
+  EXPECT_LT(x.minus(kopya).norm(), 1e-12) << "ozdes duzen reddedildi";
+
+  const int aktif = x.active_dof();
+  const StateVec d = delta_uret(aktif);
+  const NavState y = x.plus(d);
+
+  const StateVec geri = y.minus(x);
+  for (int i = 0; i < aktif; ++i) {
+    EXPECT_NEAR(geri[i], d[i], 1e-9) << "bilesen " << i;
+  }
+  EXPECT_LT(geri.tail(kMaxStateDof - aktif).cwiseAbs().maxCoeff(), 1e-18);
 }
 
 } // namespace

@@ -256,7 +256,7 @@ class NavState {
   /// delta = X (-) other = Log(other^-1 o X). Kuyrugu SIFIRLAR.
   /// Iki durumun aktif duzeni ayni olmalidir.
   StateVec minus(const NavState& other) const {
-    assert(augment_dof_ == other.augment_dof_ && "farkli duzenli durumlar cikariliyor");
+    assert(ayni_duzen(other) && "farkli duzenli durumlar cikariliyor");
 
     StateVec d = StateVec::Zero();
     d.template head<kSe23Dof>() = kerteriz::minus(pose_, other.pose_);
@@ -317,6 +317,37 @@ class NavState {
   }
 
   int klon_sayisi() const { return blok_sayisi_ - kalici_blok_sayisi_; }
+
+  /// Iki durumun augmentation duzeni BIREBIR ayni mi.
+  ///
+  /// Yalnizca augment_dof_ esitligi YETMEZ: ayni toplam boyuta sahip fakat
+  /// farkli yapida iki duzen (ornegin 2-DoF tek kalibrasyon ile 1-DoF iki
+  /// kalibrasyon, ya da 6-DoF kalibrasyon ile bir klon) sessizce yanlis
+  /// cikarilirdi. Klon farkinda ozellikle tehlikeli: SE(3) farki ile Oklidyen
+  /// fark ayni segmentten okunur ve sonuc gecerli GORUNUR.
+  bool ayni_duzen(const NavState& other) const {
+    if (kalici_blok_sayisi_ != other.kalici_blok_sayisi_ || blok_sayisi_ != other.blok_sayisi_) {
+      return false;
+    }
+    for (int i = 0; i < blok_sayisi_; ++i) {
+      const Blok& a = bloklar_[i];
+      const Blok& b = other.bloklar_[i];
+      // kind karsilastirmasi bugun YAPISAL OLARAK gereksizdir: kalibrasyonlar
+      // [0, kalici_blok_sayisi_) araligini, klonlar sonrasini isgal eder, yani
+      // iki sayac esitse turler de konumsal olarak esittir. Yine de tutulur —
+      // o yerlesim invaryanti bir gun bozulursa bu kontrol sessiz kalmaz.
+      if (a.kind != b.kind || a.dof != b.dof) {
+        return false;
+      }
+      if (a.kind == AugmentKind::kPersistentCalibration && a.name != b.name) {
+        return false;
+      }
+      if (a.kind == AugmentKind::kClone && a.id != b.id) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   manif::SE_2_3d pose_ = manif::SE_2_3d::Identity();
   Vec3 gyro_bias_ = Vec3::Zero();
