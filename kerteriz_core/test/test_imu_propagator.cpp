@@ -209,6 +209,57 @@ TEST(ImuPropagator, ZeroDtIsNoOp) {
 }
 
 // -----------------------------------------------------------------------------
+// Uzun kosum: yonelim ortonormal kalmali
+//
+// Yayilim rotasyonu her adimda matrise cevirip kuaterniyona geri donduruyordu;
+// matristen turetilen kuaterniyon birim normdan sapinca saklanan deger de
+// birim olmaktan cikiyor ve `.rotation()` |q|^2 ile olcekleniyor. Hata
+// CARPIMSAL buyudugu icin birkac bin adimda rotasyon tumden bozuluyordu.
+//
+// Bu test dogrulugu ASSERT'E DEGIL, dogrudan invaryantlara baglar: R^T R = I
+// ve det R = 1. Boylece NDEBUG altinda (manif kontrolu kapaliyken) de
+// baglayicidir — ki asil tehlikeli durum tam olarak odur.
+// -----------------------------------------------------------------------------
+
+TEST(ImuPropagator, OrientationStaysOrthonormalOverLongRun) {
+  NavState x = ornek_durum();
+  NavCovariance p = NavCovariance::Zero();
+  p.topLeftCorner(kCoreDof, kCoreDof) =
+      Eigen::MatrixXd::Identity(kCoreDof, kCoreDof).cast<Scalar>() * 0.1;
+
+  const ImuPropagator prop(ornek_gurultu());
+  const Scalar dt = 0.01;          // 100 Hz
+  const Vec3 w(0.20, -0.10, 0.30); // sifirdan farkli SABIT acisal hiz
+  const ImuSample u = olcum(w, Vec3(0.4, 0.3, kG));
+
+  constexpr int kAdim = 5000; // 50 saniye
+  Scalar en_buyuk_ortogonallik = 0.0;
+  Scalar en_buyuk_determinant = 0.0;
+
+  for (int k = 1; k <= kAdim; ++k) {
+    prop.propagate(x, p, u, dt);
+
+    const Eigen::Matrix3d r = x.extended_pose().rotation();
+    const Scalar ortogonallik =
+        (r.transpose() * r - Eigen::Matrix3d::Identity()).cwiseAbs().maxCoeff();
+    const Scalar determinant = std::abs(r.determinant() - Scalar(1));
+    en_buyuk_ortogonallik = std::max(en_buyuk_ortogonallik, ortogonallik);
+    en_buyuk_determinant = std::max(en_buyuk_determinant, determinant);
+  }
+
+  EXPECT_LT(en_buyuk_ortogonallik, 1e-12)
+      << "R^T R birimden sapti; " << kAdim << " adimda maks " << en_buyuk_ortogonallik;
+  EXPECT_LT(en_buyuk_determinant, 1e-12) << "det R birden sapti; maks " << en_buyuk_determinant;
+
+  EXPECT_TRUE(x.extended_pose().rotation().allFinite());
+  EXPECT_TRUE(x.extended_pose().translation().allFinite());
+  EXPECT_TRUE(x.extended_pose().linearVelocity().allFinite());
+  EXPECT_TRUE(x.gyro_bias().allFinite());
+  EXPECT_TRUE(x.accel_bias().allFinite());
+  EXPECT_TRUE(p.topLeftCorner(x.active_dof(), x.active_dof()).allFinite());
+}
+
+// -----------------------------------------------------------------------------
 // Denetim (6) benzeri: analitik F, SAYISAL surec Jacobian'i ile dogrulanir.
 //
 // Formule guvenilmez. x (+) delta ayni IMU ve dt ile yayilir, nominal yayilmis
