@@ -167,7 +167,14 @@ class ImuPropagator {
     const Vec3 v1 = v0 + a_w * dt;
     const Vec3 p1 = p0 + v0 * dt + Scalar(0.5) * a_w * dt * dt;
 
-    x.extended_pose() = SE23(p1, Eigen::Quaternion<Scalar>(r1), v1);
+    // KUATERNIYON NORMALLESTIRILIR. r1 bir matris carpimidir ve ondan
+    // turetilen kuaterniyon birim normdan sapar; normallestirilmeden
+    // saklanirsa `.rotation()` |q|^2 ile olceklenir ve hata her adimda
+    // CARPIMSAL buyur. Duzeltme olmadan 100 Hz'de birkac bin adimda rotasyon
+    // tumden bozulur (bkz. OrientationStaysOrthonormalOverLongRun).
+    Eigen::Quaternion<Scalar> q1(r1);
+    q1.normalize();
+    x.extended_pose() = SE23(p1, q1, v1);
     // Bias'lar nominal yayilimda DEGISMEZ (CONVENTIONS §7: db = n_b).
   }
 
