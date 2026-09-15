@@ -107,3 +107,17 @@ target_link_libraries(test_phase1_measurements PRIVATE kerteriz::core GTest::gte
 target_compile_definitions(test_phase1_measurements PRIVATE EIGEN_RUNTIME_NO_MALLOC)
 target_compile_options(test_phase1_measurements PRIVATE -UNDEBUG)
 add_test(NAME test_phase1_measurements COMMAND test_phase1_measurements)
+
+# F1.7 — Estimator: delegasyon, UpdateStatus -> RejectReason eslemesi,
+# tam PipelineSnapshot round-trip'i.
+add_executable(test_estimator test_estimator.cpp)
+target_link_libraries(test_estimator PRIVATE kerteriz::core GTest::gtest_main)
+target_compile_options(test_estimator PRIVATE -UNDEBUG)
+add_test(NAME test_estimator COMMAND test_estimator)
+
+# F1.7 — MeasurementBuffer: sira, bayatlik, geri sarma ve yeniden yayilim.
+# Ana test kronolojik referans ile gecikmeli kosunun esitligidir.
+add_executable(test_measurement_buffer test_measurement_buffer.cpp)
+target_link_libraries(test_measurement_buffer PRIVATE kerteriz::core GTest::gtest_main)
+target_compile_options(test_measurement_buffer PRIVATE -UNDEBUG)
+add_test(NAME test_measurement_buffer COMMAND test_measurement_buffer)
