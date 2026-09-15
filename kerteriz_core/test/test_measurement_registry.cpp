@@ -5,17 +5,31 @@
 ///   1. MEKANIZMA: yerel `Registry` ornekleri uzerinde denetim fonksiyonlari
 ///      ihlali gercekten yakaliyor mu. Ihlalli durum kalici olarak test
 ///      paketindedir, elle bozup geri almaya gerek yoktur.
-///   2. DENETIM: kuresel defterin kendisi temiz mi. Faz 1'de testsiz bir
-///      olcum kaydedilirse bu testler duser.
+///   2. DENETIM: kuresel defterin kendisi temiz mi. Testsiz bir olcum
+///      kaydedilirse bu testler duser.
+///
+/// F1.6'dan itibaren kuresel defter SAHTE TIPLERDEN IBARET DEGILDIR: bes
+/// GERCEK Faz 1 olcumu (GnssPosition, GnssVelocity, WheelVelocity,
+/// NonHolonomic, ZeroVelocity) kayitlidir ve her birinin Jacobian test govdesi
+/// gercek analitik/sayisal karsilastirmadir. Onceki hâlde denetim yalnizca
+/// sahte tipleri goruyordu; uretimde GnssPosition varken kapsam disindaydi.
 
 #include "fake_measurements.hpp"
+#include "kerteriz/measurements/gnss_position.hpp"
+#include "kerteriz/measurements/gnss_velocity.hpp"
+#include "kerteriz/measurements/non_holonomic.hpp"
 #include "kerteriz/measurements/registry.hpp"
+#include "kerteriz/measurements/wheel_velocity.hpp"
+#include "kerteriz/measurements/zero_velocity.hpp"
 #include "kerteriz/state/lie.hpp"
 #include "kerteriz/util/numeric_residual_jacobian.hpp"
+#include "measurement_jacobian_check.hpp"
 
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace {
 
@@ -32,6 +46,8 @@ using kerteriz::measurements::Registry;
 using kerteriz::measurements::type_id;
 using kerteriz::test_fakes::SahteGnss;
 using kerteriz::test_fakes::SahteTeker;
+using kerteriz::test_support::jacobian_hatasi;
+using kerteriz::test_support::ornek_durum_nav;
 
 /// Yerel defter testleri icin tip kimligi tasiyicilari. Icerikleri onemsiz;
 /// onemli olan FARKLI tipler olmalari.
@@ -70,6 +86,18 @@ void jacobian_karsilastir() {
   }
 }
 
+bool kayitli_tip(const Registry& reg, std::string_view type_name) {
+  const auto& m = reg.measurements();
+  return std::any_of(m.begin(), m.end(),
+                     [&](const auto& kayit) { return kayit.type_name == type_name; });
+}
+
+bool kayitli_config(const Registry& reg, std::string_view config_name) {
+  const auto& m = reg.measurements();
+  return std::any_of(m.begin(), m.end(),
+                     [&](const auto& kayit) { return kayit.config_name == config_name; });
+}
+
 std::string listele(const std::vector<std::string_view>& adlar) {
   std::string s;
   for (const auto& ad : adlar) {
@@ -90,6 +118,58 @@ std::string listele(const std::vector<std::string_view>& adlar) {
 KERTERIZ_REGISTER_JACOBIAN_TEST(SahteGnss) { jacobian_karsilastir<SahteGnss>(); }
 
 KERTERIZ_REGISTER_JACOBIAN_TEST(SahteTeker) { jacobian_karsilastir<SahteTeker>(); }
+
+// --- GERCEK Faz 1 olcumleri -------------------------------------------------
+//
+// Govdeler sayisal Jacobian'i NavState::plus uzerinden alir (ortak arac,
+// measurement_jacobian_check.hpp) ve olcumun KENDI doldurdugu J_res ile
+// karsilastirir. Tolerans model testleriyle AYNI siniftadir; denetim govdesi
+// gevsetilmis bir kopya degildir.
+//
+// Durum kasten birim-olmayan yonelimli ve uc bileseni de sifirdan farkli govde
+// hizina sahiptir: -R ile -I ayrimi ve [u]x capraz terimi boylece gercekten
+// sinanir. Augmentation da eklenir — olcumler o sutunlara dokunmamalidir.
+
+namespace {
+
+kerteriz::NavState denetim_durumu() {
+  kerteriz::NavState x = ornek_durum_nav();
+  x.register_calibration("wheel_scale", 1);
+  x.push_clone();
+  return x;
+}
+
+} // namespace
+
+KERTERIZ_REGISTER_JACOBIAN_TEST(kerteriz::GnssPosition) {
+  const kerteriz::GnssPosition z(1, "gnss_position", kerteriz::Vec3(20.0, -3.0, 5.0),
+                                 Eigen::Matrix3d::Identity() * 2.25,
+                                 kerteriz::Vec3(0.10, -0.25, 0.35));
+  EXPECT_LT(jacobian_hatasi(z, denetim_durumu()), 1e-6);
+}
+
+KERTERIZ_REGISTER_JACOBIAN_TEST(kerteriz::GnssVelocity) {
+  const kerteriz::GnssVelocity z(1, "gnss_velocity", kerteriz::Vec3(1.4, -0.7, 0.3),
+                                 Eigen::Matrix3d::Identity() * 0.09);
+  EXPECT_LT(jacobian_hatasi(z, denetim_durumu()), 1e-6);
+}
+
+KERTERIZ_REGISTER_JACOBIAN_TEST(kerteriz::WheelVelocity) {
+  const kerteriz::WheelVelocity z(1, "wheel_velocity", 2.1, 0.04);
+  EXPECT_LT(jacobian_hatasi(z, denetim_durumu()), 1e-6);
+}
+
+KERTERIZ_REGISTER_JACOBIAN_TEST(kerteriz::NonHolonomic) {
+  Eigen::Matrix<kerteriz::Scalar, 2, 2> c;
+  c << 0.04, 0.005, 0.005, 0.09;
+  const kerteriz::NonHolonomic z(1, "non_holonomic", c);
+  EXPECT_LT(jacobian_hatasi(z, denetim_durumu()), 1e-6);
+}
+
+KERTERIZ_REGISTER_JACOBIAN_TEST(kerteriz::ZeroVelocity) {
+  const kerteriz::ZeroVelocity z(1, "zero_velocity", Eigen::Matrix3d::Identity() * 0.01);
+  EXPECT_LT(jacobian_hatasi(z, denetim_durumu()), 1e-6);
+}
 
 // -----------------------------------------------------------------------------
 // 1. Mekanizma — yerel defterler uzerinde
@@ -195,19 +275,34 @@ TEST(Denetim4, KayitlarBaskaCeviriBirimindenGorulur) {
   // sinif hatayi (kerteriz_eval'in 0 testle gecmesi, BUILD_TESTING sizintisi)
   // birkac kez yasadi. O yuzden once defterin DOLU oldugu dogrulanir.
   const auto& defter = global_registry();
-  ASSERT_EQ(defter.measurements().size(), 2U)
+  ASSERT_EQ(defter.measurements().size(), 7U)
       << "kuresel defter beklenen kayitlari icermiyor — statik kayitlar "
          "baglayici tarafindan dusurulmus olabilir";
+  EXPECT_EQ(defter.jacobian_tests().size(), 7U);
 
-  bool gnss_var = false;
-  bool teker_var = false;
-  for (const auto& olcum : defter.measurements()) {
-    gnss_var = gnss_var || olcum.type_name == "SahteGnss";
-    teker_var = teker_var || olcum.type_name == "SahteTeker";
+  for (const auto beklenen : {"SahteGnss", "SahteTeker"}) {
+    EXPECT_TRUE(kayitli_tip(defter, beklenen)) << "mekanizma kaydi kayip: " << beklenen;
   }
-  EXPECT_TRUE(gnss_var);
-  EXPECT_TRUE(teker_var);
-  EXPECT_EQ(defter.jacobian_tests().size(), 2U);
+}
+
+TEST(Denetim4, GercekFaz1OlcumleriKapsamda) {
+  // Denetim (4) bir donem YALNIZCA sahte tipleri goruyordu; uretimde
+  // GnssPosition varken kapsam disindaydi. Bu test o bosluga karsi bekcidir:
+  // bes gercek Faz 1 olcumu kanonik config adlariyla kayitli olmali.
+  const auto& defter = global_registry();
+
+  for (const auto beklenen :
+       {"gnss_position", "gnss_velocity", "wheel_velocity", "non_holonomic", "zero_velocity"}) {
+    EXPECT_TRUE(kayitli_config(defter, beklenen)) << "gercek olcum kaydi kayip: " << beklenen;
+  }
+
+  // Ve her biri GERCEKTEN Measurement turevidir — kayit makrosu bunu tek
+  // basina zorlamaz, tam tip olmasi yeterlidir.
+  static_assert(std::is_base_of<kerteriz::Measurement, kerteriz::GnssPosition>::value, "");
+  static_assert(std::is_base_of<kerteriz::Measurement, kerteriz::GnssVelocity>::value, "");
+  static_assert(std::is_base_of<kerteriz::Measurement, kerteriz::WheelVelocity>::value, "");
+  static_assert(std::is_base_of<kerteriz::Measurement, kerteriz::NonHolonomic>::value, "");
+  static_assert(std::is_base_of<kerteriz::Measurement, kerteriz::ZeroVelocity>::value, "");
 }
 
 TEST(Denetim4, HerKayitliOlcumunJacobianTestiVar) {

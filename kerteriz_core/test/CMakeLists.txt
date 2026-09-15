@@ -36,9 +36,12 @@ add_test(NAME test_linear_update COMMAND test_linear_update)
 # Iki ceviri birimi KASTEN ayridir: fabrika kaydi fake_measurements.cpp'de,
 # Jacobian testleri test dosyasinda. Denetim ancak ikisi ayni binary'de
 # bulustugunda anlamlidir.
+# F1.6'dan itibaren GERCEK Faz 1 olcumleri de buraya kaydolur; denetim artik
+# yalnizca sahte tipleri gormez. Kayitlar ayri ceviri biriminde kalir.
 add_executable(test_measurement_registry
   test_measurement_registry.cpp
-  fake_measurements.cpp)
+  fake_measurements.cpp
+  phase1_measurement_registrations.cpp)
 target_include_directories(test_measurement_registry PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_measurement_registry PRIVATE kerteriz::core GTest::gtest_main)
 add_test(NAME test_measurement_registry COMMAND test_measurement_registry)
@@ -94,3 +97,13 @@ target_link_libraries(test_gnss_position PRIVATE kerteriz::core GTest::gtest_mai
 target_compile_definitions(test_gnss_position PRIVATE EIGEN_RUNTIME_NO_MALLOC)
 target_compile_options(test_gnss_position PRIVATE -UNDEBUG)
 add_test(NAME test_gnss_position COMMAND test_gnss_position)
+
+# F1.6 — kalan Faz 1 olcum modelleri: GnssVelocity, WheelVelocity,
+# NonHolonomic, ZeroVelocity. Dordu tek binary'de; ortak backend
+# invariant'lari model basina tekrarlanmaz.
+add_executable(test_phase1_measurements test_phase1_measurements.cpp)
+target_include_directories(test_phase1_measurements PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_phase1_measurements PRIVATE kerteriz::core GTest::gtest_main)
+target_compile_definitions(test_phase1_measurements PRIVATE EIGEN_RUNTIME_NO_MALLOC)
+target_compile_options(test_phase1_measurements PRIVATE -UNDEBUG)
+add_test(NAME test_phase1_measurements COMMAND test_phase1_measurements)

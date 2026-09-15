@@ -79,6 +79,16 @@ inline AdjointMat tangent_permutation() {
   return p;
 }
 
+/// so(3) sapka operatoru:  [v]x.  capraz(v) w == v.cross(w).
+///
+/// Sag pertürbasyon turetmelerinin her birinde gecer ([dtheta]x a = -[a]x dtheta
+/// donusumu), o yuzden olcum basliklarinda tekrar tanimlanmaz.
+inline Eigen::Matrix<Scalar, 3, 3> capraz(const Vec3& v) {
+  Eigen::Matrix<Scalar, 3, 3> m;
+  m << Scalar(0), -v.z(), v.y(), v.z(), Scalar(0), -v.x(), -v.y(), v.x(), Scalar(0);
+  return m;
+}
+
 // --- Grup islemleri, HEPSI bizim sirada -------------------------------------
 
 /// Exp: tegent -> grup.
