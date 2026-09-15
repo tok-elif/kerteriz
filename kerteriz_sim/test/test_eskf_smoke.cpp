@@ -282,7 +282,7 @@ void yazdir(const char* etiket, const SmokeSummary& s) {
               s.final_velocity_error);
   std::printf("    GNSS toplam %d  kabul %d  red %d  sayisal basarisizlik %d\n", s.gnss_total,
               s.accepted, s.rejected, s.numerical_failures);
-  std::printf("    NIS  min %.4f  ort %.4f  maks %.4f\n", s.nis_min, s.nis_mean(), s.nis_max);
+  std::printf("    NIS  min %.6g  ort %.6g  maks %.6g\n", s.nis_min, s.nis_mean(), s.nis_max);
   std::printf("    son damga %lld ns\n", static_cast<long long>(s.final_stamp_ns));
 }
 
