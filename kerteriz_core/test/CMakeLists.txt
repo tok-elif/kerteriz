@@ -87,3 +87,10 @@ add_executable(test_clone_fail_fast test_clone_fail_fast.cpp)
 target_link_libraries(test_clone_fail_fast PRIVATE kerteriz::core GTest::gtest_main)
 target_compile_definitions(test_clone_fail_fast PRIVATE NDEBUG)
 add_test(NAME test_clone_fail_fast COMMAND test_clone_fail_fast)
+
+# F1.4 — GnssPosition: olcum modeli, analitik/sayisal Jacobian, backend entegrasyonu.
+add_executable(test_gnss_position test_gnss_position.cpp)
+target_link_libraries(test_gnss_position PRIVATE kerteriz::core GTest::gtest_main)
+target_compile_definitions(test_gnss_position PRIVATE EIGEN_RUNTIME_NO_MALLOC)
+target_compile_options(test_gnss_position PRIVATE -UNDEBUG)
+add_test(NAME test_gnss_position COMMAND test_gnss_position)
