@@ -79,3 +79,11 @@ target_link_libraries(test_eskf_backend PRIVATE kerteriz::core GTest::gtest_main
 target_compile_definitions(test_eskf_backend PRIVATE EIGEN_RUNTIME_NO_MALLOC)
 target_compile_options(test_eskf_backend PRIVATE -UNDEBUG)
 add_test(NAME test_eskf_backend COMMAND test_eskf_backend)
+
+# F1.3 — klon yolunun RELEASE'de de fail-fast oldugu.
+# KASTEN -DNDEBUG, -UNDEBUG YOK: assert'lerin kapali oldugu durum sinanir.
+# Diger backend testleri assert'ler acikken kostugu icin bu senaryoyu goremez.
+add_executable(test_clone_fail_fast test_clone_fail_fast.cpp)
+target_link_libraries(test_clone_fail_fast PRIVATE kerteriz::core GTest::gtest_main)
+target_compile_definitions(test_clone_fail_fast PRIVATE NDEBUG)
+add_test(NAME test_clone_fail_fast COMMAND test_clone_fail_fast)

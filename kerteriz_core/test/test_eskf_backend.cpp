@@ -7,7 +7,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <gtest/gtest.h>
+#include <memory>
 #include <new>
+#include <type_traits>
 
 namespace {
 
@@ -774,6 +776,62 @@ TEST(EskfBackend, JacobianColumnsBeyondActiveDofAreIgnored) {
   EXPECT_NEAR(*sa.nis, *sb.nis, 1e-18) << "aktif boyut otesi sutunlar NIS'i etkiledi";
   EXPECT_LT(a.state().minus(b.state()).norm(), 1e-18);
   EXPECT_LT((a.covariance() - b.covariance()).cwiseAbs().maxCoeff(), 1e-18);
+}
+
+// -----------------------------------------------------------------------------
+// INTERFACES §4 — soyut arayuz gercekten uygulaniyor
+// -----------------------------------------------------------------------------
+
+TEST(EskfBackend, ImplementsFilterBackendInterface) {
+  static_assert(std::is_base_of<kerteriz::FilterBackend, EskfBackend>::value,
+                "EskfBackend FilterBackend'den turemeli");
+  static_assert(std::has_virtual_destructor<kerteriz::FilterBackend>::value,
+                "polimorfik silme guvenli olmali");
+}
+
+TEST(EskfBackend, WorksThroughFilterBackendReference) {
+  // Tum akis YALNIZCA soyut arayuz uzerinden kosar; Estimator ve
+  // MeasurementBuffer backend'i boyle gorecek.
+  NavState x = ornek_durum();
+  x.register_calibration("wheel_scale", 1);
+  NavCovariance p = kosegen_p(x.active_dof(), 0.1);
+  p(9, 9) = 4.0e-4;
+
+  EskfBackend somut(ornek_config(x, p, 1000));
+  kerteriz::FilterBackend& backend = somut;
+
+  EXPECT_EQ(backend.mode(), EstimatorMode::kNominal);
+  EXPECT_EQ(backend.stamp_ns(), 1000);
+
+  backend.predict(olcum(2000), 0.01);
+  EXPECT_EQ(backend.stamp_ns(), 2000);
+
+  const CloneId id = backend.push_clone();
+  ASSERT_NE(id, kInvalidClone);
+  EXPECT_EQ(backend.state().clone_offset(id), kCoreDof + 1);
+
+  const auto anlik = backend.save_snapshot();
+
+  SahteBiasOlcumu z(1, 0.02, 0.0, 1.0e-4);
+  const auto sonuc = backend.update(z);
+  EXPECT_EQ(sonuc.status, UpdateStatus::kAccepted);
+  ASSERT_TRUE(sonuc.nis.has_value());
+
+  backend.drop_clone(id);
+  EXPECT_FALSE(backend.state().has_clone(id));
+
+  backend.restore_snapshot(anlik);
+  EXPECT_TRUE(backend.state().has_clone(id)) << "snapshot soyut arayuzden geri gelmedi";
+  EXPECT_EQ(backend.stamp_ns(), anlik.stamp_ns);
+  EXPECT_TRUE(backend.weak_directions().empty());
+}
+
+TEST(EskfBackend, PolymorphicDeletionThroughBasePointer) {
+  std::unique_ptr<kerteriz::FilterBackend> backend = std::make_unique<EskfBackend>(ornek_config());
+  backend->predict(olcum(2000), 0.01);
+  EXPECT_EQ(backend->stamp_ns(), 2000);
+  EXPECT_EQ(backend->covariance().rows(), kMaxStateDof);
+  backend.reset(); // sanal yikici yoksa buraya kadar UB
 }
 
 } // namespace

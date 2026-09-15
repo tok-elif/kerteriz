@@ -12,6 +12,7 @@
 #include "kerteriz/types.hpp"
 
 #include <cassert>
+#include <cstdlib>
 #include <string_view>
 
 namespace kerteriz {
@@ -31,10 +32,20 @@ class StateBundle {
   const NavState& current() const { return *current_; }
 
   /// Olcumun required_clones() ile talep ettigi klon. Yoksa cagri hatadir.
-  const NavState& clone(CloneId id) const {
+  ///
+  /// F1.3'te klon kumesi HER ZAMAN bostur, dolayisiyla bu yol her cagrida
+  /// hatadir ve HER BUILD'DE sonlandirir.
+  ///
+  /// `assert` TEK BASINA YETMEZ: NDEBUG altinda kalkar ve ardindan gelen
+  /// `return *current_` calisirdi — yani guncel durum, istenen KLON gibi
+  /// sunulurdu. Sessiz yanlis veri, tanimsiz davranistan daha tehlikelidir.
+  /// Bu yuzden kosulsuz `std::abort()` kullanilir; `assert` yalnizca debug
+  /// build'de okunabilir bir mesaj birakmak icindir.
+  [[noreturn]] const NavState& clone(CloneId id) const {
     (void)id;
+    (void)current_;
     assert(false && "F1.3: StateBundle klon tasimaz; klon tuketicisi Faz 3'tedir");
-    return *current_;
+    std::abort();
   }
 
  private:

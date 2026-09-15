@@ -29,6 +29,7 @@
 /// gate alani yoktur; sensor basina cozunurluk Estimator geldiginde mumkun
 /// olacaktir.
 
+#include "kerteriz/backends/filter_backend.hpp"
 #include "kerteriz/measurements/measurement.hpp"
 #include "kerteriz/process/imu_propagator.hpp"
 #include "kerteriz/state/nav_state.hpp"
@@ -38,33 +39,12 @@
 
 #include <array>
 #include <cassert>
+#include <cstdlib>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 namespace kerteriz {
-
-/// Filtre guncellemesinin sonucu (ADR-24).
-enum class UpdateStatus {
-  kAccepted,          ///< nis dolu, state/P guncellendi
-  kChiSquareRejected, ///< nis dolu, state/P DEGISMEDI
-  kNumericalFailure   ///< S pozitif tanimli cozulemedi: nis BOS, state/P DEGISMEDI
-};
-
-/// YALNIZCA filtre seviyesi bilgisi tasir — "bayat olcum" veya "FDI disladi"
-/// gibi sebepler buraya ait DEGILDIR (ADR-19).
-struct UpdateResult {
-  UpdateStatus status;
-  std::optional<Scalar> nis; ///< yalnizca kNumericalFailure'da bos
-  int dof;                   ///< = residual_dim(), her durumda gecerli
-  Scalar threshold;          ///< kullanilan chi-kare esigi, her durumda gecerli
-};
-
-/// Backend'in KENDI durumu. Butunluk katmanini ICERMEZ (ADR-20).
-struct BackendSnapshot {
-  NavState state;
-  NavCovariance covariance;
-  TimeNs stamp_ns; ///< zaman snapshot'in parcasidir (ADR-15)
-};
 
 struct EskfConfig {
   NavState x0;
@@ -74,7 +54,7 @@ struct EskfConfig {
   Scalar chi2_confidence;
 };
 
-class EskfBackend {
+class EskfBackend final : public FilterBackend {
  public:
   explicit EskfBackend(EskfConfig config)
       : state_(std::move(config.x0)), covariance_(std::move(config.P0)), stamp_ns_(config.t0),
@@ -89,14 +69,21 @@ class EskfBackend {
   }
 
   /// dt saniye; backend mutlak zamani u.stamp_ns'ten alir.
-  void predict(const ImuSample& u, Scalar dt) {
+  void predict(const ImuSample& u, Scalar dt) override {
     propagator_.propagate(state_, covariance_, u, dt);
     stamp_ns_ = u.stamp_ns; // dt BIRIKTIRILMEZ (CONVENTIONS §6)
   }
 
   /// CONVENTIONS §4'teki Joseph + simetrizasyon `linear_update()` icinde
   /// uygulanir. Explicit inverse yasak.
-  UpdateResult update(const Measurement& z) {
+  UpdateResult update(const Measurement& z) override {
+    // F1.3 SOZLESME IHLALI: klon isteyen olcum desteklenmiyor. StateBundle
+    // klon tasiyamaz (INTERFACES §3 kurucusu yalnizca `current` alir), yani
+    // boyle bir olcum sessizce YANLIS durum uzerinde degerlendirilirdi.
+    // assert YETMEZ — NDEBUG altinda kalkar. Her build'de fail-fast.
+    if (!z.required_clones().empty()) {
+      std::abort();
+    }
     const int dim = z.residual_dim();
     assert(dim > 0 && dim <= kMaxResidualDim);
     const Scalar esik = esik_of(dim);
@@ -130,14 +117,16 @@ class EskfBackend {
     return UpdateResult{UpdateStatus::kAccepted, guncelleme.nis, dim, esik};
   }
 
-  const NavState& state() const { return state_; }
-  const NavCovariance& covariance() const { return covariance_; }
-  TimeNs stamp_ns() const { return stamp_ns_; }
-  EstimatorMode mode() const { return EstimatorMode::kNominal; }
+  const NavState& state() const override { return state_; }
+  const NavCovariance& covariance() const override { return covariance_; }
+  TimeNs stamp_ns() const override { return stamp_ns_; }
+  EstimatorMode mode() const override { return EstimatorMode::kNominal; }
 
-  BackendSnapshot save_snapshot() const { return BackendSnapshot{state_, covariance_, stamp_ns_}; }
+  BackendSnapshot save_snapshot() const override {
+    return BackendSnapshot{state_, covariance_, stamp_ns_};
+  }
 
-  void restore_snapshot(const BackendSnapshot& s) {
+  void restore_snapshot(const BackendSnapshot& s) override {
     state_ = s.state;
     covariance_ = s.covariance;
     stamp_ns_ = s.stamp_ns;
@@ -149,7 +138,7 @@ class EskfBackend {
   ///   P_xc = P Jc^T,   P_cc = Jc P Jc^T
   ///
   /// NavState::push_clone() basarisiz olursa kovaryans DEGISMEZ.
-  CloneId push_clone() {
+  CloneId push_clone() override {
     const int n = state_.active_dof();
     const CloneId id = state_.push_clone();
     if (id == kInvalidClone) {
@@ -174,7 +163,7 @@ class EskfBackend {
   /// Marjinalizasyon: ilgili 6 satir/sutun KALDIRILIR. Jointly-Gaussian bir
   /// blogu marjinallestirmek tam olarak budur — Schur tumleyeni GEREKMEZ, o
   /// kosullandirma islemidir.
-  void drop_clone(CloneId id) {
+  void drop_clone(CloneId id) override {
     assert(state_.has_clone(id) && "var olmayan klon dusuruluyor");
     const int n = state_.active_dof();
     const int ofs = state_.clone_offset(id);
@@ -195,7 +184,7 @@ class EskfBackend {
     state_.drop_clone(id);
   }
 
-  ArrayView<const WeakDirection> weak_directions() const { return {}; }
+  ArrayView<const WeakDirection> weak_directions() const override { return {}; }
 
  private:
   /// Klon tegeti [dtheta, dp] — cekirdek indeksleri (CONVENTIONS §5.1).
@@ -210,5 +199,8 @@ class EskfBackend {
   std::array<Scalar, kMaxResidualDim> esikler_{};
   MeasurementWorkspace calisma_alani_{};
 };
+
+static_assert(std::is_base_of<FilterBackend, EskfBackend>::value,
+              "EskfBackend INTERFACES §4 sozlesmesini uygulamalidir");
 
 } // namespace kerteriz
