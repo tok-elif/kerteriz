@@ -56,6 +56,56 @@ struct LinearUpdateResult {
 /// spd_ok false donerse P DEGISTIRILMEZ ve delta_out sifirlanir — bozuk bir
 /// cozumle durumu kirletmemek icin. spd_ok KESIN pozitif tanimliligi ister;
 /// pozitif yari-tanimli (tekil) S kabul EDILMEZ.
+/// NIS'i P'YE DOKUNMADAN hesaplar (F1.3).
+///
+/// Neden ayri bir fonksiyon: chi-kare kapisi MUTASYONDAN ONCE karar vermek
+/// zorundadir; `linear_update()` ise NIS ile birlikte P'yi de gunceller.
+/// Alternatif 63x63 P kopyalamakti — her reddedilen olcumde bos yere tam
+/// guncelleme hesabi ve 31.8 KB kopya demekti.
+///
+/// `linear_update()` SOZLESMESINE DOKUNMAZ. S kurulumu, padding ve SPD olcutu
+/// onunla BIREBIR aynidir; ayni S icin urettikleri NIS de aynidir. Bedeli,
+/// kabul edilen yolda S'in ve LDLT'sinin iki kez hesaplanmasidir — en fazla
+/// kMaxResidualDim x kMaxResidualDim, ihmal edilebilir.
+///
+/// Tahsis yapmaz.
+inline LinearUpdateResult innovation_nis(const Eigen::Ref<const JacMat>& j_res,
+                                         const Eigen::Ref<const ResVec>& r,
+                                         const Eigen::Ref<const ResMat>& r_cov, int dim, int dof,
+                                         const Eigen::Ref<const StateMat>& p) {
+  assert(dim > 0 && dim <= kMaxResidualDim);
+  assert(dof > 0 && dof <= kMaxStateDof);
+
+  LinearUpdateResult out{Scalar(0), false};
+
+  StateResMat pjt = StateResMat::Zero();
+  pjt.topLeftCorner(dof, dim).noalias() =
+      p.topLeftCorner(dof, dof) * j_res.topLeftCorner(dim, dof).transpose();
+
+  ResMat s = ResMat::Identity();
+  s.topLeftCorner(dim, dim).noalias() = j_res.topLeftCorner(dim, dof) * pjt.topLeftCorner(dof, dim);
+  s.topLeftCorner(dim, dim) += r_cov.topLeftCorner(dim, dim);
+  if (dim < kMaxResidualDim) {
+    const int kalan = kMaxResidualDim - dim;
+    s.topRightCorner(dim, kalan).setZero();
+    s.bottomLeftCorner(kalan, dim).setZero();
+  }
+
+  // linear_update() ile AYNI olcut: isPositive() tek basina yetmez.
+  const Eigen::LDLT<ResMat> ldlt(s);
+  out.spd_ok = (ldlt.info() == Eigen::Success) && ldlt.isPositive() &&
+               (ldlt.vectorD().minCoeff() > Scalar(0));
+  if (!out.spd_ok) {
+    return out;
+  }
+
+  ResVec rp = ResVec::Zero();
+  rp.head(dim) = r.head(dim);
+  const ResVec sinv_r = ldlt.solve(rp);
+  out.nis = rp.head(dim).dot(sinv_r.head(dim));
+  return out;
+}
+
 inline LinearUpdateResult linear_update(const Eigen::Ref<const JacMat>& j_res,
                                         const Eigen::Ref<const ResVec>& r,
                                         const Eigen::Ref<const ResMat>& r_cov, int dim, int dof,
