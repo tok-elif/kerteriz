@@ -373,6 +373,53 @@ TEST(NcltMs25, RejectsWrongFieldCount) {
   EXPECT_FALSE(parse_nclt_ms25_line("1326036000000000,0.1,0.2,0.3,1.0,2.0", e));
 }
 
+TEST(NcltGps, FixModeMustBeAnExactIntegerInTheDocumentedRange) {
+  // Kayan noktaya cevirip kirpmak "3.7"yi sessizce 3 yapardi: gecersiz bir
+  // kayit tam 3D fix gibi gorunurdu.
+  int m = -99;
+  for (const char* gecerli : {"0", "1", "2", "3"}) {
+    EXPECT_TRUE(kerteriz_bringup::parse_nclt_fix_mode(gecerli, m)) << gecerli;
+  }
+  for (const char* gecersiz : {"-1", "4", "2.5", "3.7", "3e0", "abc", "", " "}) {
+    EXPECT_FALSE(kerteriz_bringup::parse_nclt_fix_mode(gecersiz, m))
+        << "kabul edildi: " << gecersiz;
+  }
+
+  // Satir yolundan da gecerli: bozuk fix modu AYRISTIRMA HATASIDIR.
+  const EnuProjector izdusum(Llh{0.738168521, -1.461022891, 270.0});
+  DatasetEvent e;
+  bool gecerli = false;
+  EXPECT_FALSE(parse_nclt_gps_line("1326036000000000,3.7,9,0.7381,-1.4610,270.0,0,1.4", izdusum,
+                                   3.0, Vec3::Zero(), e, gecerli));
+  EXPECT_FALSE(parse_nclt_gps_line("1326036000000000,4,9,0.7381,-1.4610,270.0,0,1.4", izdusum, 3.0,
+                                   Vec3::Zero(), e, gecerli));
+}
+
+TEST(NcltParsing, NonFiniteFieldsAreRejected) {
+  // stod "nan"/"inf" metinlerini kabul eder; boyle bir deger durumu ve
+  // kovaryansi tek adimda zehirlerdi. Bozuk veri ayristiricida durur.
+  Scalar x = 0;
+  EXPECT_FALSE(kerteriz_bringup::parse_scalar_token("nan", x));
+  EXPECT_FALSE(kerteriz_bringup::parse_scalar_token("inf", x));
+  EXPECT_FALSE(kerteriz_bringup::parse_scalar_token("-inf", x));
+  EXPECT_TRUE(kerteriz_bringup::parse_scalar_token("-1.25", x));
+
+  DatasetEvent e;
+  EXPECT_FALSE(parse_nclt_ms25_line("1326036000000000,0.1,0.2,0.3,nan,2.0,-9.8,0.01,0.02,0.03", e))
+      << "NaN ivme";
+  EXPECT_FALSE(parse_nclt_ms25_line("1326036000000000,0.1,0.2,0.3,1.0,2.0,-9.8,inf,0.02,0.03", e))
+      << "Inf jiro";
+
+  const EnuProjector izdusum(Llh{0.738168521, -1.461022891, 270.0});
+  bool gecerli = false;
+  EXPECT_FALSE(parse_nclt_gps_line("1326036000000000,3,9,nan,-1.4610,270.0,0,1.4", izdusum, 3.0,
+                                   Vec3::Zero(), e, gecerli))
+      << "NaN enlem";
+  EXPECT_FALSE(parse_nclt_gps_line("1326036000000000,3,9,0.7381,-1.4610,inf,0,1.4", izdusum, 3.0,
+                                   Vec3::Zero(), e, gecerli))
+      << "Inf yukseklik";
+}
+
 TEST(NcltGps, ThreeDimensionalEventNeedsFixModeThree) {
   // Tablo 7: 2 = enlem/boylam iyi, 3 = YUKSEKLIK DE iyi. Faz 1 GnssPosition
   // uc boyutlu oldugu icin esik 3'tur. Mod 2, buyuk bir dusey sigma ile
@@ -397,17 +444,20 @@ TEST(NcltGps, ThreeDimensionalEventNeedsFixModeThree) {
   EXPECT_NEAR(e.position_cov_w(1, 1), 9.0, 1e-12);
 }
 
-TEST(NcltLoader, OriginIsTakenFromFirstFullThreeDimensionalFix) {
-  // Fixture'in ilk kaydi mod 3. Yukseklikleri gecersiz olan kayitlar orijin
-  // olamaz; olsalardi tum yorungeye sabit bir dusey sapma girerdi.
+TEST(NcltLoader, OriginSkipsEarlierInvalidFixes) {
+  // Fixture'in ILK kaydi bilerek mod 2'dir ve LLH'si mod 3 kayitlarindan
+  // FARKLIDIR. Orijin ondan kurulsaydi ilk 3D konum [0,0,0] CIKMAZDI —
+  // yani bu test gercekten atlamanin olup olmadigini ayirt eder.
   NcltConfig cfg;
   cfg.gps_csv = fixture("nclt_sentetik/gps_rtk.csv");
   std::vector<DatasetEvent> olaylar;
   ASSERT_TRUE(kerteriz_bringup::load_nclt(cfg, olaylar).ok);
 
-  ASSERT_FALSE(olaylar.empty());
+  ASSERT_EQ(olaylar.size(), 3U) << "mod 1 ve mod 2 kayitlari olay uretmemeli";
+  EXPECT_EQ(olaylar.front().stamp_ns, 1326036000200000LL * 1000LL)
+      << "ilk olay, ilk MOD 3 kaydinin damgasini tasimali";
   EXPECT_LT(olaylar.front().position_w.norm(), 1e-9)
-      << "ilk 3D fix orijin olmali: " << olaylar.front().position_w.transpose();
+      << "orijin ilk 3D fix'ten kurulmadi: " << olaylar.front().position_w.transpose();
 }
 
 TEST(NcltGps, LatLonAreRadiansNotDegrees) {

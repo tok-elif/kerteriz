@@ -68,6 +68,7 @@
 #include "kerteriz_bringup/kitti_oxts.hpp" // ParseStatus
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <fstream>
 #include <limits>
@@ -165,6 +166,11 @@ inline bool parse_int64_token(const std::string& token, std::int64_t& out) {
 }
 
 /// Tek bir alani kayan noktaya cevirir. "1.5abc" gibi kismi sayilar reddedilir.
+///
+/// SONLULUK ZORUNLUDUR. `std::stod` "nan", "inf", "-inf" metinlerini seve seve
+/// kabul eder; boyle bir deger IMU veya GNSS alanina girdiginde durumu ve
+/// kovaryansi tek adimda zehirler ve hata kaynagi ayristiriciya kadar geri
+/// izlenemez. Bozuk veri BURADA durur.
 inline bool parse_scalar_token(const std::string& token, Scalar& out) {
   std::size_t tuketilen = 0;
   try {
@@ -177,7 +183,7 @@ inline bool parse_scalar_token(const std::string& token, Scalar& out) {
       return false;
     }
   }
-  return true;
+  return std::isfinite(out);
 }
 
 /// Virgulle ayrilmis bir satiri TAM `beklenen` SAYISAL alan olarak ayristirir.
@@ -241,6 +247,26 @@ inline bool parse_nclt_ms25_line(const std::string& satir, DatasetEvent& out) {
 /// de iyi. Bu yuzden esik 3'tur.
 inline constexpr int kNcltMinFixMode3d = 3;
 
+/// Tablo 7'de belgelenen en buyuk fix modu. Bu araligin disindaki bir deger
+/// veri setinin tanimladigi bir sey DEGILDIR; kirpilip en yakin gecerli moda
+/// benzetilmez, REDDEDILIR.
+inline constexpr int kNcltMaxFixMode = 3;
+
+/// Fix modu TAM TAMSAYIDIR. Kayan noktaya cevirip kirpmak "3.7" gibi bozuk
+/// bir alani sessizce 3 yapardi — yani gecersiz bir kayit tam 3D fix gibi
+/// gorunurdu.
+inline bool parse_nclt_fix_mode(const std::string& token, int& out) {
+  std::int64_t deger = 0;
+  if (!parse_int64_token(token, deger)) {
+    return false;
+  }
+  if (deger < 0 || deger > kNcltMaxFixMode) {
+    return false;
+  }
+  out = static_cast<int>(deger);
+  return true;
+}
+
 /// `gps.csv` / `gps_rtk.csv` tek satiri. Fix modu 3D icin yetersizse olay
 /// URETILMEZ (`gecerli = false`); bu bir ayristirma hatasi DEGILDIR.
 ///
@@ -263,14 +289,17 @@ inline bool parse_nclt_gps_line(const std::string& satir, const EnuProjector& iz
   if (!nclt_utime_to_ns(utime_us, t)) {
     return false;
   }
+  int fix = 0;
+  if (!parse_nclt_fix_mode(parcalar[1], fix)) {
+    return false;
+  }
   Scalar v[kNcltGpsFieldCount] = {};
-  for (int i = 1; i < kNcltGpsFieldCount; ++i) {
+  for (int i = 2; i < kNcltGpsFieldCount; ++i) {
     if (!parse_scalar_token(parcalar[static_cast<std::size_t>(i)], v[i])) {
       return false;
     }
   }
 
-  const int fix = static_cast<int>(v[1]);
   if (fix < kNcltMinFixMode3d) {
     gecerli = false;
     return true; // gecerli satir, 3D icin yeterli fix yok
@@ -355,14 +384,18 @@ inline ParseStatus load_nclt(const NcltConfig& cfg, std::vector<DatasetEvent>& o
         if (!parse_int64_token(parcalar[0], utime_us)) {
           return ParseStatus::failure(cfg.gps_csv + ":" + std::to_string(no) + " bozuk UTIME");
         }
+        int fix = 0;
+        if (!parse_nclt_fix_mode(parcalar[1], fix)) {
+          return ParseStatus::failure(cfg.gps_csv + ":" + std::to_string(no) + " bozuk fix modu");
+        }
         Scalar v[kNcltGpsFieldCount] = {};
-        for (int i = 1; i < kNcltGpsFieldCount; ++i) {
+        for (int i = 2; i < kNcltGpsFieldCount; ++i) {
           if (!parse_scalar_token(parcalar[static_cast<std::size_t>(i)], v[i])) {
             return ParseStatus::failure(cfg.gps_csv + ":" + std::to_string(no) +
                                         " bozuk gps satiri");
           }
         }
-        if (static_cast<int>(v[1]) < kNcltMinFixMode3d) {
+        if (fix < kNcltMinFixMode3d) {
           continue;
         }
         orijin = Llh{v[3], v[4], v[5]};
