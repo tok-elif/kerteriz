@@ -43,36 +43,45 @@ Kendi kendine yeten tam tanım: [`docs/SPEC.md`](docs/SPEC.md)
 
 <!-- Her faz geçişinde GÜNCELLE. Ajan buraya bakıp kapsamı belirliyor. -->
 
-**Aktif faz:** FAZ 1 — ESKF · **Hafta:** 3–5
+**Aktif faz:** FAZ 2 — Kanıt · **Hafta:** 6–8
 
-**Kapsam içi** (`PHASE0.md` §6 devri ve `SPEC.md` §5 Faz 1 satırından):
-- `NavState` — 15-DoF sabit çekirdek, sınırlı kapasiteli augmentation (INTERFACES §1)
-- `ImuPropagator` — IMU yayılımı (INTERFACES §2)
-- `EskfBackend` — Faz 0'ın `linear_update`'i üzerine (INTERFACES §4)
-- Ölçüm modelleri: `GnssPosition`, `GnssVelocity`, `WheelVelocity`, `NonHolonomic`, `ZeroVelocity`
-- **Sentetik smoke test** — R6 gereği gerçek veriden ÖNCE
-- `MeasurementBuffer` + `Estimator` (INTERFACES §5)
-- Veri seti adaptörleri (KITTI, NCLT) ve `robot_localization` kıyası
-
-**Sıra** (`PHASE0.md` §6'da yazılı):
-`NavState` → `ImuPropagator` → `EskfBackend` → `GnssPosition` → **sentetik smoke test** →
-`MeasurementBuffer` + `Estimator` → veri seti adaptörleri → `robot_localization` kıyası
-
-Faz 1'de `EskfBackend`, Faz 0'ın üç çıktısına dayanır: `linear_update`
-(güncelleme matematiği test edilmiş), `numeric_residual_jacobian` (ilk `Measurement`'ın
-Jacobian'ı gün içinde doğrulanır), `kerteriz_sim` (sentetik veri hazır).
+**Kapsam içi** (`SPEC.md` §9 Faz 2 satırından):
+- Üretecin Monte Carlo'ya genişletilmesi
+- NEES / NIS analizi, χ² güven bantları
+- `evo` ile değerlendirme, otomatik rapor (`make results`)
+- **Faz 1'den devredilen:** `robot_localization` ile performans denkliği, ayar, birden çok
+  KITTI dizisi ve daha güçlü değerlendirme (bkz. `SPEC.md` §9.1)
 
 **Kapsam dışı (şimdi yazma):**
-- Monte Carlo, NEES analizi, evo, otomatik rapor — Faz 2
 - InEKF — Faz 3 · Klonlama, teker kalibrasyonu — Faz 3
 - FDI, protection level ve `WeakDirection`'ın **çalışma anındaki kullanımı** — Faz 4.
   `WeakDirection` ortak veri tipi olarak Faz 0 S5'te tanımlandı (INTERFACES §0).
 
-**Faz tamamlandı sayılır** (`SPEC.md` §5):
-- [ ] Sentetik veride ESKF yakınsıyor ve NIS makul — **gerçek veriye geçiş ön koşulu**
-- [ ] KITTI'de `robot_localization` ile denk ATE
-- [ ] Tüm Jacobian testleri geçiyor (Denetim ④ kayıtlı her ölçüm için)
-- [ ] Repo paylaşılabilir (MVP)
+**Faz 2 tamamlandı sayılır** (`SPEC.md` §9):
+- [ ] E1 grafiği üretiliyor
+- [ ] `make results` her şeyi sıfırdan üretiyor
+- [ ] Filtrenin iyimser olduğu bir senaryo dürüstçe raporlanmış
+
+### Faz 1 — kapandı
+
+Ölçüm modelleri, ardışık düzen ve gerçek veri yolu yerinde; uçtan uca zincir gerçek
+KITTI üzerinde koşuyor.
+
+- [x] Sentetik veride ESKF yakınsıyor ve NIS makul — **gerçek veriye geçiş ön koşulu**
+      (`kerteriz_sim/test/test_eskf_smoke.cpp`)
+- [x] KITTI'de `robot_localization` ile **tekrarlanabilir ATE karşılaştırması kurulmuş ve
+      ham sonuçlar raporlanmış** — özgün ölçüt *denk ATE* idi ve **SAĞLANMADI**;
+      ölçülen oran 4.01. Ölçüt `SPEC.md` §9.1'de açıkça değiştirildi, sayılar oradadır.
+      Performans denkliği, ayar ve çoklu dizi **Faz 2**'ye devredildi.
+- [x] Tüm Jacobian testleri geçiyor (Denetim ④ — beş gerçek Faz 1 ölçümü kayıtlı)
+- [x] Repo paylaşılabilir (MVP) — README gerçek derleme, sentetik doğrulama, KITTI
+      koşucusu, harici taban çizgisi ve ATE komutlarını taşıyor
+
+Faz 1 çıktıları: `state/nav_state.hpp`, `process/imu_propagator.hpp`,
+`backends/eskf_backend.hpp`, `measurements/{gnss_position, gnss_velocity, wheel_velocity,
+non_holonomic, zero_velocity}.hpp`, `buffer/{estimator, measurement_buffer,
+processing_result}.hpp`, `integrity/{nis_monitor, fault_detector}.hpp` (Faz 4 iskeleti),
+`kerteriz_bringup` veri seti adaptörleri + KITTI koşucusu + ATE aracı.
 
 ### Faz 0 — kapandı (`v0.1.0`)
 
