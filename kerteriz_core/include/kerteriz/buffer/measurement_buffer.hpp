@@ -38,8 +38,10 @@
 /// Ikinci bolum ayri bir olay olarak KAYDEDILMEZ; dizideki IMU olayina
 /// sirasi geldiginde dt kendiliginden `t_{k+1} - t_m` cikar.
 ///
-/// ERTELEME. Damgasi bilinen EN YENI IMU orneginden sonra olan bir olcum
-/// yerlestirilemez: o araligi kapsayan IMU verisi henuz yoktur. Boyle bir
+/// ERTELEME. Damgasi hem mevcut zamandan hem de bilinen EN YENI IMU
+/// orneginden sonra olan bir olcum yerlestirilemez: o araligi kapsayan IMU
+/// verisi henuz yoktur. Damgasi tam mevcut zamanda olan olcum ERTELENMEZ —
+/// yayilim gerektirmez, durum zaten o andadir. Yerlestirilemeyen boyle bir
 /// olcum kuyrukta BEKLER ve o cagride sonuc uretmez; kapsayan IMU gelince
 /// normal gecikme yolundan islenir. Alternatif — onu guncel duruma uygulamak —
 /// gelecekteki bir olcumu gecmis bir duruma yazmak olurdu.
@@ -172,7 +174,13 @@ class MeasurementBuffer {
         }
         continue;
       }
-      if (!e.imu && e.stamp_ns > en_yeni_imu_ns_) {
+      // Erteleme yalnizca olcum HEM mevcut zamanin HEM DE bilinen en yeni IMU
+      // orneginin ILERISINDE ise anlamlidir. `son_ns_` bu noktada estimator'un
+      // gercek zamanidir (ilk cagride backend().stamp_ns()'ten alinir, sonra
+      // sirali yolda ona esit kalir). Damgasi tam mevcut zamanda olan bir
+      // olcum yayilim GEREKTIRMEZ; onu da ertelemek, hicbir IMU gelmezse
+      // kuyrukta sonsuza kadar bekletmek olurdu.
+      if (!e.imu && e.stamp_ns > son_ns_ && e.stamp_ns > en_yeni_imu_ns_) {
         ertelenen.push_back(std::move(e)); // kapsayan IMU henuz yok
         continue;
       }

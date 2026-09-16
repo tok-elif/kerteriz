@@ -444,6 +444,32 @@ TEST(MeasurementBuffer, FirstEventOlderThanEstimatorTimeIsNotTreatedAsInOrder) {
   }
 }
 
+TEST(MeasurementBuffer, MeasurementAtCurrentEstimatorTimeDoesNotWaitForFutureImu) {
+  // Damgasi estimator'un TAM mevcut zamani olan bir olcum yayilim GEREKTIRMEZ:
+  // durum zaten o andadir. Erteleme yalnizca olcum hem mevcut zamanin hem de
+  // bilinen en yeni IMU orneginin ILERISINDE ise anlamlidir; aksi halde
+  // hicbir IMU gelmezse olcum sonsuza kadar kuyrukta beklerdi.
+  Estimator est = kestirimci();
+  MeasurementBuffer tampon(kPencere); // taze tampon, hic IMU yok
+  const NavState durum_once = est.backend().state();
+  const Vec3 ofset(0.40, -0.25, 0.15);
+  const Vec3 z_w = ornek_durum().extended_pose().translation() + ofset;
+
+  ASSERT_TRUE(tampon.add_measurement(gnss(kT0, ofset)));
+  const auto sonuclar = tampon.process(est);
+
+  ASSERT_EQ(sonuclar.size(), 1U) << "olcum ertelendi — gelecek IMU bekleniyor";
+  EXPECT_EQ(sonuclar[0].reason, RejectReason::kNone);
+  EXPECT_EQ(sonuclar[0].stamp_ns, kT0);
+  ASSERT_TRUE(sonuclar[0].update.has_value());
+  EXPECT_EQ(sonuclar[0].update->dof, 3);
+
+  EXPECT_EQ(est.backend().stamp_ns(), kT0) << "yayilim yapilmamaliydi";
+  const Vec3 p_once = durum_once.extended_pose().translation();
+  const Vec3 p_sonra = est.backend().state().extended_pose().translation();
+  EXPECT_LT((p_sonra - z_w).norm(), (p_once - z_w).norm()) << "duzeltme olcum yonunde degil";
+}
+
 // -----------------------------------------------------------------------------
 // Basarisiz geri sarma, gecerli olaylari DUSURMEZ
 // -----------------------------------------------------------------------------
