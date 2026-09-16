@@ -8,7 +8,18 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>kerteriz_core</depend>
+
+  <!-- ROS bagimliliklari YALNIZCA harici robot_localization taban cizgisini
+       beslemek/kaydetmek icindir. Kerteriz filtre zinciri bunlari kullanmaz. -->
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>rosgraph_msgs</depend>
+
   <exec_depend>kerteriz_ros</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <!-- HARICI kiyas filtresi. Kerteriz'in calismasi icin GEREKLI DEGILDIR. -->
+  <exec_depend>robot_localization</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
   <export><build_type>ament_cmake</build_type></export>

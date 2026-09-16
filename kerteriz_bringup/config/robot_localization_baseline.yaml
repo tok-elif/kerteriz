@@ -1,0 +1,150 @@
+# ============================================================================
+# HARICI TABAN CIZGISI — robot_localization
+# ============================================================================
+#
+# BU DOSYA KERTERIZ FILTRESININ PARCASI DEGILDIR.
+#
+# `robot_localization` burada YALNIZCA ayni veri setini bagimsiz olarak tuketen
+# HARICI bir kiyas filtresidir. Kerteriz hicbir noktada onu cagirmaz, sonucunu
+# okumaz veya ona bagimli degildir; `kerteriz_core` bu paketi tanimaz.
+#
+#     ayni veri seti -> Kerteriz ESKF          -> yorunge_K
+#                    -> robot_localization EKF -> yorunge_RL
+#
+# ---------------------------------------------------------------------------
+# BILGI KUMESI — KERTERIZ ILE FARKLAR ACIKCA YAZILIDIR
+# ---------------------------------------------------------------------------
+#
+# AYNI olan:
+#   * ayni IMU akisi (acisal hiz + ozgul kuvvet, govde cercevesinde)
+#   * ayni GNSS konum olcumleri, ayni yerel ENU orijininde, ayni kovaryansla
+#   * ayni ara-degerleme politikasi (KITTI'nin -1 isaretledigi kareler
+#     olcum olarak KULLANILMAZ)
+#   * ayni baslangic bilgisi (`initial_state` asagida)
+#   * ayni degerlendirme araligi ve ayni referans
+#
+# FARKLI olan — gizlenmiyor:
+#
+#   1. GNSS HIZI TABAN CIZGISINE VERILMIYOR.
+#      nav_msgs/Odometry twist'i COCUK CERCEVEDEDIR (base_link); bizim GNSS
+#      hizimiz dunya ENU'sundadir. Cevirmek icin bir yonelim gerekir ve o
+#      yonelimi taban cizgisine vermek ona Kerteriz'de olmayan bilgi vermek
+#      olurdu. Bu yuzden karsilastirma icin Kerteriz de AYRICA yalnizca-konum
+#      yapilandirmasiyla kosturulur (`--no-gnss-velocity`); esdeger kiyas
+#      ciftinin dogrusu odur.
+#
+#   2. DURUM VEKTORU FARKLI. robot_localization 15 durumu
+#      [x y z r p y  vx vy vz  vr vp vy  ax ay az] seklindedir; IMU BIAS
+#      DURUMU YOKTUR. Kerteriz'in cekirdegi SE_2(3) + jiro/ivme bias'idir.
+#      Bu bir arayuz farki degil, model farkidir ve esitlenemez.
+#
+#   3. SUREC GURULTUSU ESLENEMIYOR. Kerteriz surec gurultusunu IMU gurultu
+#      YOGUNLUKLARINDAN turetir; robot_localization dogrudan bir 15x15
+#      kovaryans ister. Bire bir donusum yoktur. Bu yuzden taban cizgisinde
+#      paketin KENDI varsayilani birakilmistir. Iki filtre de bu dizi icin
+#      AYRICA AYARLANMAMISTIR.
+#
+#      BASLANGIC kovaryansi ise ARTIK gizli varsayilana birakilmiyor: asagida
+#      acikca verilir ve ortusen durumlarda Kerteriz P0 ile ayni sayilari
+#      tasir. Ayrinti ve yaklasiklik notlari `initial_estimate_covariance`
+#      blogunun basindadir.
+# ---------------------------------------------------------------------------
+
+ekf_filter_node:
+  ros__parameters:
+    use_sim_time: true
+
+    frequency: 50.0
+    sensor_timeout: 0.5
+    two_d_mode: false
+    publish_tf: false
+    print_diagnostics: false
+
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    # Tek ornek kosuyor: dunya cercevesi odom'dur, boylece harici bir
+    # odom->base_link donusumune ihtiyac duyulmaz.
+    world_frame: odom
+
+    # -----------------------------------------------------------------------
+    # BASLANGIC KOVARYANSI — ACIKCA VERILIR
+    #
+    # Belirtilmezse robot_localization paketin kendi varsayilanini kullanir ve
+    # o varsayilan Kerteriz'in P0'indan MERTEBELERCE farklidir. 14.81 s'lik kisa
+    # bir dizide bu tek basina ATE kiyasini tarafli hale getirir; bu yuzden
+    # gizli varsayilan BIRAKILMAZ.
+    #
+    # Sira: [x y z, roll pitch yaw, vx vy vz, vroll vpitch vyaw, ax ay az]
+    # Satir-oncelikli 15x15. Capraz terimler sifirdir (Kerteriz P0 da kosegen).
+    #
+    # ORTUSEN DURUMLAR — Kerteriz ile ayni sayisal deger:
+    #   konum x/y/z        1.0^2    (sigma_position_m    = 1.0 m)
+    #   govde hizi vx/y/z  0.5^2    (sigma_velocity_mps  = 0.5 m/s)
+    #                      Kerteriz'in hiz kovaryansi IZOTROPIKTIR, bu yuzden
+    #                      W -> B dondurmesi degeri DEGISTIRMEZ; ayni sayi
+    #                      dogrudan kullanilabilir.
+    #   yonelim r/p/y      0.02^2   (sigma_orientation_rad = 0.02)
+    #                      YAKLASIKTIR, tam koordinat donusumu DEGILDIR:
+    #                      Kerteriz'in yonelim kovaryansi SO(3) uzerinde SAG
+    #                      PERTURBASYON kovaryansidir, robot_localization ise
+    #                      Euler durumlari tasir. Kucuk aci sinirinda ikisi
+    #                      sayisal olarak ortusur; buyuk aci belirsizliginde
+    #                      ortusmezdi. 0.02 rad (~1.1 derece) bu sinirdadir.
+    #
+    # KERTERIZ KARSILIGI OLMAYAN DURUMLAR — esdegermis gibi gosterilmiyor:
+    #   acisal hiz vroll/vpitch/vyaw   0.5^2  (rad/s)
+    #   ivme       ax/ay/az            3.0^2  (m/s^2)
+    #
+    #   Bunlar robot_localization'a ozgudur; Kerteriz'in durumunda acisal hiz
+    #   ve ivme YOKTUR (IMU olcumdur, durum degil). `initial_state` ikisini de
+    #   SIFIR verir ve bunun veri setinden gelen bir dayanagi yoktur. Bu yuzden
+    #   secilen degerler guven IDDIA ETMEZ; makul arac dinamigini kapsar:
+    #   kentici bir aracin donus hizi ~0.5 rad/s, boylamsal/yanal ivmesi
+    #   ~3 m/s^2 mertebesindedir. Kucuk bir deger secmek, bilinmeyen bir
+    #   baslangici bilinir gibi gostermek olurdu.
+    # -----------------------------------------------------------------------
+    initial_estimate_covariance: [
+      1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   # x
+      0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   # y
+      0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   # z
+      0.0, 0.0, 0.0, 0.0004, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   # roll
+      0.0, 0.0, 0.0, 0.0, 0.0004, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   # pitch
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0004, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   # yaw
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   # vx
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   # vy
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   # vz
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0,   # vroll
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0,   # vpitch
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0,   # vyaw
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 9.0, 0.0, 0.0,   # ax
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 9.0, 0.0,   # ay
+      0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 9.0   # az
+    ]
+
+    # --- GNSS konumu -------------------------------------------------------
+    # Sira: [x y z, roll pitch yaw, vx vy vz, vroll vpitch vyaw, ax ay az]
+    # Yalnizca konum alinir; hiz icin yukaridaki (1) numarali farka bakiniz.
+    odom0: /odometry/gps
+    odom0_config: [true,  true,  true,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
+    odom0_relative: false
+    odom0_queue_size: 20
+
+    # --- IMU ---------------------------------------------------------------
+    # Yonelim SAGLANMIYOR (Kerteriz de IMU'dan yonelim almiyor); yalnizca
+    # acisal hiz ve ozgul kuvvet.
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  true,  true,  true,
+                  true,  true,  true]
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 50
+    imu0_remove_gravitational_acceleration: true
