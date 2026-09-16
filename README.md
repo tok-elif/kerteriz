@@ -2,11 +2,17 @@
 
 [![CI](https://github.com/tok-elif/kerteriz/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/tok-elif/kerteriz/actions/workflows/ci.yml)
 
-**Çoğu kestirimci nerede olduğunu söyler. Kerteriz *ne kadar güvenebileceğini* de söyler.**
+**Çoğu kestirimci nerede olduğunu söyler. Kerteriz'in hedefi *ne kadar
+güvenebileceğini* de söylemek.**
 
-ROS 2 için çok-sensörlü durum kestirim çerçevesi: kestirim hatasına çalışma anında sayısal
-üst sınır (*protection level*) üreten, tutarlılığı Monte Carlo NEES analiziyle doğrulanan,
-SE₂(3) üzerinde değişmez (invariant) EKF tabanlı füzyon.
+ROS 2 için çok-sensörlü durum kestirim çerçevesi. **Nihai hedefi**, kestirim hatası için
+çalışma anında sayısal bir üst sınır (*protection level*) üretmek, tutarlılığı Monte Carlo
+NEES/NIS ile ölçmek ve SE₂(3) tabanlı değişmez (invariant) kestirim mimarisini
+desteklemektir.
+
+Bugün bunların hangisinin **uygulanmış** olduğu aşağıda [Bugün ne var](#bugün-ne-var)
+bölümünde tek tek yazılıdır: Faz 1 sonunda çalışan füzyon **ESKF**'tir; InEKF, Monte Carlo
+NEES ve protection level henüz **yoktur**.
 
 > **Durum: Faz 0 ve Faz 1 kapandı — Faz 2 (kanıt) aktif.** Mimari dondurulmuştur (ADR-1…24).
 > ESKF, Faz 1 ölçüm modelleri, ölçüm tamponu ve gerçek KITTI yolu **çalışır durumdadır**;
@@ -26,13 +32,16 @@ Bu önemsiz bir ayrıntı değil. Kestirimciyi tüketen her şey — planlama, k
 mantığı — kovaryansa güvenerek karar verir. Aşırı-iyimser bir kovaryans, sapmış bir
 konumdan daha tehlikelidir: sistem yanlış olduğunu bilmez.
 
-## Üç katman
+## Üç katman — hedeflenen tasarım
 
-| Katman | Ne |
-|---|---|
-| **Yapısal olarak daha iyi koşullu** | Navigasyon çekirdeği SE₂(3) üzerinde; değişmez hata yapısı linearizasyon kaynaklı tutarsızlığı azaltmayı hedefler |
-| **Tutarlılığı ölçülmüş** | Monte Carlo NEES ve çevrimiçi NIS, χ² güven bantlarıyla — avantaj varsayılmaz, ölçülür |
-| **Çalışma anında farkında** | NIS tabanlı χ² kapılama, arıza tespiti ve izolasyonu, protection level, kademeli bozulma |
+Aşağıdaki üç katman projenin **hedefidir**, bugünkü durumu değil. Her satırın ne kadarının
+uygulandığı "Durum" sütununda; ayrıntı için [Bugün ne var](#bugün-ne-var).
+
+| Katman | Ne | Durum |
+|---|---|---|
+| **Yapısal olarak daha iyi koşullu** | Navigasyon çekirdeği SE₂(3) üzerinde; değişmez hata yapısı linearizasyon kaynaklı tutarsızlığı azaltmayı hedefler | Durum SE₂(3) üzerinde **var**; değişmez (InEKF) backend **Faz 3** |
+| **Tutarlılığı ölçülmüş** | Monte Carlo NEES ve çevrimiçi NIS, χ² güven bantlarıyla — avantaj varsayılmaz, ölçülür | Çevrimiçi NIS ve χ² kapılama **var**; Monte Carlo NEES **Faz 2** |
+| **Çalışma anında farkında** | NIS tabanlı χ² kapılama, arıza tespiti ve izolasyonu, protection level, kademeli bozulma | χ² kapılama **var**; FDI ve protection level **Faz 4** |
 
 ## Bugün ne var
 
