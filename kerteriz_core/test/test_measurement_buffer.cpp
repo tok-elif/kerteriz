@@ -100,6 +100,28 @@ void dogrudan_kos(Estimator& est, const std::vector<Olay>& olaylar) {
   }
 }
 
+/// Referans: olcumleri TAM damgalarinda uygular. IMU araligini damgada boler,
+/// olcumu uygular, kalan araligi normal IMU olayi tamamlar. Bu, tamponun
+/// yapmasi gerekenin ELLE yazilmis hâlidir — tampon kodundan bagimsizdir.
+void exact_kos(Estimator& est, const std::vector<Olay>& imular, const std::vector<Olay>& olcumler) {
+  std::size_t mi = 0;
+  for (const Olay& o : imular) {
+    while (mi < olcumler.size() && olcumler[mi].t <= o.t) {
+      const TimeNs t_m = olcumler[mi].t;
+      const TimeNs simdi = est.backend().stamp_ns();
+      if (t_m > simdi) {
+        ImuSample parca = imu(o.imu_k); // ornek [t_k, t_{k+1}] araligini temsil eder
+        parca.stamp_ns = t_m;
+        est.predict(parca, static_cast<Scalar>(t_m - simdi) * Scalar(1e-9));
+      }
+      est.apply(*gnss(t_m, olcumler[mi].ofset));
+      ++mi;
+    }
+    est.predict(imu(o.imu_k), static_cast<Scalar>(o.t - est.backend().stamp_ns()) * Scalar(1e-9));
+  }
+  EXPECT_EQ(mi, olcumler.size()) << "referans kosuda yerlestirilmeyen olcum kaldi";
+}
+
 void esit_mi(const Estimator& a, const Estimator& b, const char* nerede) {
   EXPECT_EQ(a.backend().stamp_ns(), b.backend().stamp_ns()) << nerede << ": zaman";
   EXPECT_LT(a.backend().state().minus(b.backend().state()).norm(), 0.0 + 1e-18)
@@ -315,7 +337,14 @@ TEST(MeasurementBuffer, DelayedMeasurementMatchesChronologicalReference) {
   ASSERT_EQ(gec_kabul, static_cast<int>(olcumler.size()))
       << "geciken olcumlerin hepsi islenmeliydi — test aksi halde bos gecer";
 
+  // --- C) elle yazilmis TAM ZAMANLI referans ---
+  // Iki tampon kosusunun birbirine esit olmasi yetmez: ikisi de ayni yanlisi
+  // yapiyor olabilirdi. Bu ucuncu referans tampon kodunu hic kullanmaz.
+  Estimator elle = kestirimci();
+  exact_kos(elle, imular, olcumler);
+
   esit_mi(gecikmeli, referans, "gecikmeli vs kronolojik");
+  esit_mi(referans, elle, "kronolojik vs elle tam-zamanli referans");
 
   // Iki kosunun GERCEKTEN farkli yollardan gectigini de dogrula: gecikmeli
   // kosuda her olcum damgasinin gerisine geri sarildi. Aksi halde bu test
@@ -373,6 +402,135 @@ TEST(MeasurementBuffer, OutOfOrderDropWhenRewindPointWasEvicted) {
   EXPECT_FALSE(sonuclar[0].update.has_value());
   EXPECT_LT(est.backend().state().minus(durum_once).norm(), 0.0 + 1e-18);
   EXPECT_EQ(est.backend().stamp_ns(), t_once);
+}
+
+// -----------------------------------------------------------------------------
+// Baslangic ufku — tampon zamani estimator'dan alir
+// -----------------------------------------------------------------------------
+
+TEST(MeasurementBuffer, FirstEventOlderThanEstimatorTimeIsNotTreatedAsInOrder) {
+  // Estimator t0 = 1.000 s, tamponun gordugu ILK olay 0.950 s'lik bir olcum.
+  // Sentinel bir "en kucuk zaman" ufkuyla bu olcum SIRALI sayilir ve 1.000 s
+  // durumuna uygulanirdi. Ufuk estimator'un gercek zamanindan baslamali.
+  const TimeNs t_gec = kT0 - 50 * kMs;
+
+  { // pencere ICINDE: geri sarilacak gecmis yok -> kOutOfOrderDrop
+    Estimator est = kestirimci();
+    MeasurementBuffer tampon(kPencere); // 200 ms > 50 ms
+    const NavState durum_once = est.backend().state();
+
+    ASSERT_TRUE(tampon.add_measurement(gnss(t_gec, Vec3(5.0, -4.0, 3.0))));
+    const auto sonuclar = tampon.process(est);
+
+    ASSERT_EQ(sonuclar.size(), 1U);
+    EXPECT_EQ(sonuclar[0].reason, RejectReason::kOutOfOrderDrop);
+    EXPECT_FALSE(sonuclar[0].update.has_value()) << "backend'e ulasmamaliydi";
+    EXPECT_LT(est.backend().state().minus(durum_once).norm(), 0.0 + 1e-18)
+        << "gecmis olcum guncel duruma uygulandi";
+    EXPECT_EQ(est.backend().stamp_ns(), kT0);
+  }
+  { // pencere DISINDA: kTooOld
+    Estimator est = kestirimci();
+    MeasurementBuffer tampon(20 * kMs); // 20 ms < 50 ms
+    const NavState durum_once = est.backend().state();
+
+    ASSERT_TRUE(tampon.add_measurement(gnss(t_gec, Vec3(5.0, -4.0, 3.0))));
+    const auto sonuclar = tampon.process(est);
+
+    ASSERT_EQ(sonuclar.size(), 1U);
+    EXPECT_EQ(sonuclar[0].reason, RejectReason::kTooOld);
+    EXPECT_FALSE(sonuclar[0].update.has_value());
+    EXPECT_LT(est.backend().state().minus(durum_once).norm(), 0.0 + 1e-18);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Basarisiz geri sarma, gecerli olaylari DUSURMEZ
+// -----------------------------------------------------------------------------
+
+TEST(MeasurementBuffer, FailedRewindDropsOnlyTheUnplaceableEvent) {
+  constexpr TimeNs kGenisPencere = 3600LL * 1'000'000'000LL;
+  constexpr int kFazla = kerteriz::kMaxBufferedEvents + 16;
+
+  Estimator est = kestirimci();
+  MeasurementBuffer tampon(kGenisPencere);
+  for (int k = 1; k <= kFazla; ++k) {
+    tampon.add_imu(imu(k));
+    ASSERT_TRUE(tampon.process(est).empty());
+  }
+  const TimeNs t_once = est.backend().stamp_ns();
+  const NavState durum_once = est.backend().state();
+
+  // AYNI process() cagrisinda: yerlestirilemeyecek kadar eski GNSS,
+  // guncel IMU ve guncel GNSS.
+  const TimeNs t_guncel = kT0 + static_cast<TimeNs>(kFazla + 1) * kImuAdimi;
+  ASSERT_TRUE(tampon.add_measurement(gnss(kT0 + 2 * kImuAdimi, Vec3(0.3, -0.1, 0.2))));
+  tampon.add_imu(imu(kFazla + 1));
+  ASSERT_TRUE(tampon.add_measurement(gnss(t_guncel, Vec3(0.4, -0.2, 0.1))));
+
+  const auto sonuclar = tampon.process(est);
+
+  ASSERT_EQ(sonuclar.size(), 2U) << "gecerli olcum de dusurulmus";
+  EXPECT_EQ(sonuclar[0].reason, RejectReason::kOutOfOrderDrop);
+  EXPECT_FALSE(sonuclar[0].update.has_value());
+
+  EXPECT_EQ(sonuclar[1].stamp_ns, t_guncel);
+  EXPECT_EQ(sonuclar[1].reason, RejectReason::kNone) << "guncel GNSS backend'e ulasmadi";
+  ASSERT_TRUE(sonuclar[1].update.has_value());
+  EXPECT_EQ(sonuclar[1].update->dof, 3);
+
+  EXPECT_EQ(est.backend().stamp_ns(), t_guncel) << "guncel IMU yayilim yapmadi";
+  EXPECT_GT(est.backend().stamp_ns(), t_once);
+  EXPECT_GT(est.backend().state().minus(durum_once).norm(), 1e-9);
+}
+
+// -----------------------------------------------------------------------------
+// Olcum damgasinda TAM yerlestirme
+// -----------------------------------------------------------------------------
+
+TEST(MeasurementBuffer, NonAlignedMeasurementIsAppliedAtItsOwnTimestamp) {
+  // IMU 40 ms · GNSS 45 ms · IMU 50 ms.  GNSS 45 ms durumuna uygulanmali.
+  const TimeNs t_olcum = kT0 + 4 * kImuAdimi + 5 * kMs;
+  const Vec3 ofset(0.45, -0.25, 0.15);
+
+  Estimator tamponlu = kestirimci();
+  MeasurementBuffer tampon(kPencere);
+  int kabul = 0;
+  for (int k = 1; k <= 8; ++k) {
+    tampon.add_imu(imu(k));
+    if (k == 4) { // olcum, kapsayan IMU'dan (k=5) ONCE gelir
+      ASSERT_TRUE(tampon.add_measurement(gnss(t_olcum, ofset)));
+    }
+    for (const auto& r : tampon.process(tamponlu)) {
+      EXPECT_EQ(r.reason, RejectReason::kNone);
+      EXPECT_EQ(r.stamp_ns, t_olcum);
+      ++kabul;
+    }
+  }
+  ASSERT_EQ(kabul, 1) << "olcum hic islenmedi (erteleme takildi mi?)";
+
+  // Elle yazilmis TAM ZAMANLI referans.
+  std::vector<Olay> imular;
+  for (int k = 1; k <= 8; ++k) {
+    imular.push_back({kT0 + k * kImuAdimi, true, k, Vec3::Zero()});
+  }
+  Estimator elle = kestirimci();
+  exact_kos(elle, imular, {{t_olcum, false, 0, ofset}});
+  esit_mi(tamponlu, elle, "tam damgada yerlestirme");
+
+  // Ve onceki IMU durumuna uygulamak GERCEKTEN farkli sonuc verirdi —
+  // aksi halde bu test bos gecerdi.
+  Estimator hizalanmis = kestirimci();
+  for (int k = 1; k <= 8; ++k) {
+    if (k == 5) {
+      hizalanmis.apply(*gnss(t_olcum, ofset)); // 40 ms durumunda
+    }
+    hizalanmis.predict(imu(k),
+                       static_cast<Scalar>(imu(k).stamp_ns - hizalanmis.backend().stamp_ns()) *
+                           Scalar(1e-9));
+  }
+  EXPECT_GT(tamponlu.backend().state().minus(hizalanmis.backend().state()).norm(), 1e-9)
+      << "45 ms ile 40 ms yerlestirmesi ayirt edilemiyor — test bos geciyor";
 }
 
 // -----------------------------------------------------------------------------

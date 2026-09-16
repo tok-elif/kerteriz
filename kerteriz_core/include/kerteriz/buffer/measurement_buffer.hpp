@@ -16,6 +16,34 @@
 /// uretilir ve BIRIKTIRILMEZ (CONVENTIONS §6). Tamponun kendisi mutlak zamani
 /// kayan noktaya hic cevirmez.
 ///
+/// UFKUN BASLANGICI. Tampon kendi zaman ufkunu ilk `process()` cagrisinda
+/// estimator'un GERCEK zamanindan (`backend().stamp_ns()`) alir. Sentinel bir
+/// "en kucuk zaman" ile baslamak, estimator'un baslangic anindan ONCEKI bir
+/// olcumu SIRALI sayardi ve onu guncel duruma uygulardi — tam olarak ADR-5'in
+/// engellemek icin var oldugu sessiz sapma.
+///
+/// ================== OLCUM DAMGASINDA TAM YERLESTIRME =======================
+///
+/// Bir olcum iki IMU ornegi ARASINA duserse, onceki IMU durumuna uygulanmaz.
+/// Mevcut ayriklastirma (imu_propagator.hpp, F1.2) ve backend sozlesmesi
+/// birlikte tek anlamlidir: `predict(u, dt)` mutlak zamani `u.stamp_ns`
+/// yapar, yani ornek `[u.stamp_ns - dt, u.stamp_ns]` araligini temsil eder ve
+/// o aralik boyunca (w, a) SABIT tutulur. Dolayisiyla arayi olcum damgasinda
+/// ikiye bolmek ayni konvansiyonun dogrudan sonucudur:
+///
+///   predict(u_{k+1} damgasi t_m yapilmis, t_m - t_k)   -> durum t_m'de
+///   apply(z)                                            -> olcum t_m'de
+///   predict(u_{k+1}, t_{k+1} - t_m)                     -> durum t_{k+1}'de
+///
+/// Ikinci bolum ayri bir olay olarak KAYDEDILMEZ; dizideki IMU olayina
+/// sirasi geldiginde dt kendiliginden `t_{k+1} - t_m` cikar.
+///
+/// ERTELEME. Damgasi bilinen EN YENI IMU orneginden sonra olan bir olcum
+/// yerlestirilemez: o araligi kapsayan IMU verisi henuz yoktur. Boyle bir
+/// olcum kuyrukta BEKLER ve o cagride sonuc uretmez; kapsayan IMU gelince
+/// normal gecikme yolundan islenir. Alternatif — onu guncel duruma uygulamak —
+/// gelecekteki bir olcumu gecmis bir duruma yazmak olurdu.
+///
 /// ======================= TAHSIS SINIRI (ADR-22) ============================
 ///
 /// Burasi SAHIPLIK KATMANIDIR, sayisal sicak yol degil. `std::unique_ptr`
@@ -26,15 +54,14 @@
 ///
 /// ========================== FAZ 1 SEMANTIGI ================================
 ///
-/// * `process()` yalnizca BU CAGRIDA gelen olcumler icin sonuc dondurur.
-///   Geri sarma sirasinda yeniden oynatilan ESKI olcumlerin sonuclari tekrar
-///   raporlanmaz — ilk islendiklerinde raporlanmislardi.
+/// * `process()` yalnizca BU CAGRIDA islenen YENI olcumler icin sonuc
+///   dondurur. Geri sarma sirasinda yeniden oynatilan ESKI olcumlerin
+///   sonuclari tekrar raporlanmaz — ilk islendiklerinde raporlanmislardi.
 /// * Ayni damgaya sahip olaylarda IMU once islenir: olcum yayilmis durumu
-///   gorsun. Ayni damgali IKI OLCUM arasindaki sira GELIS SIRASIDIR; bu
-///   yuzden ayni damgaya gecikmeli gelen bir olcum, ayni damgali digerinin
-///   ARDINA yerlesir. Faz 1 bunu boyle kabul eder.
-/// * Pencere disinda kalan olcum `kTooOld`. Gecmis kapasitesi tukendigi icin
-///   geri sarma noktasi elde kalmamissa `kOutOfOrderDrop`.
+///   gorsun. Ayni damgali IKI OLCUM arasindaki sira GELIS SIRASIDIR.
+/// * Pencere disinda kalan olcum `kTooOld`. Geri sarma noktasi elde
+///   kalmamissa `kOutOfOrderDrop`. Bu iki karar OLAY BASINADIR: yerlestirilemeyen
+///   tek bir eski olay, ayni cagrideki gecerli olaylari DUSURMEZ.
 /// * Pencere disinda kalan IMU ornegi sessizce atilir: IMU'nun raporlanacak
 ///   bir `ProcessingResult` kanali YOKTUR (INTERFACES §5 sonucu olcume bagar).
 
@@ -45,7 +72,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
+#include <cstdlib>
 #include <deque>
 #include <limits>
 #include <memory>
@@ -82,6 +111,7 @@ class MeasurementBuffer {
     e.imu = true;
     e.u = u;
     e.yeni = true;
+    en_yeni_imu_ns_ = std::max(en_yeni_imu_ns_, u.stamp_ns);
     bekleyen_.push_back(std::move(e));
   }
 
@@ -109,17 +139,23 @@ class MeasurementBuffer {
   /// doner. Donen gorunum BIR SONRAKI `process()` cagrisina kadar gecerlidir.
   ArrayView<const ProcessingResult> process(Estimator& est) {
     sonuc_sayisi_ = 0;
+    if (!baslatildi_) {
+      son_ns_ = est.backend().stamp_ns(); // ufuk estimator'un GERCEK zamanindan
+      baslatildi_ = true;
+    }
     if (bekleyen_.empty()) {
       return {sonuclar_.data(), 0};
     }
 
     std::stable_sort(bekleyen_.begin(), bekleyen_.end(), once_gelir);
 
-    const TimeNs ufuk = std::max(son_ns_, bekleyen_.back().stamp_ns);
+    const TimeNs ufuk = std::max(son_ns_, en_yeni_imu_ns_);
     const TimeNs alt_sinir = pencere_alt_siniri(ufuk);
 
-    // 1. Pencere disindakiler elenir. Olcum icin sebep raporlanir.
+    // Siniflandirma OLAY BASINADIR. Yerlestirilemeyen bir olay yalnizca
+    // KENDISI dusurulur; aynı cagrideki gecerli olaylar islenmeye devam eder.
     std::vector<Olay> kalan;
+    std::vector<Olay> ertelenen;
     kalan.reserve(bekleyen_.size());
     for (auto& e : bekleyen_) {
       if (e.stamp_ns < alt_sinir) {
@@ -129,41 +165,38 @@ class MeasurementBuffer {
         }
         continue;
       }
-      kalan.push_back(std::move(e));
-    }
-    bekleyen_.clear();
-
-    if (kalan.empty()) {
-      budala();
-      return {sonuclar_.data(), static_cast<std::size_t>(sonuc_sayisi_)};
-    }
-
-    const TimeNs en_erken = kalan.front().stamp_ns;
-    if (en_erken >= son_ns_) {
-      // 2a. Sirali akis — geri sarma gerekmez.
-      for (auto& e : kalan) {
-        uygula(est, std::move(e));
-      }
-    } else if (!geri_sar(est, en_erken)) {
-      // 2b. Geri sarma noktasi elde kalmamis.
-      for (auto& e : kalan) {
+      if (e.stamp_ns < son_ns_ && !geri_sarilabilir(e.stamp_ns)) {
         if (!e.imu) {
           sonuc_ekle(ProcessingResult{e.z->name(), e.stamp_ns, RejectReason::kOutOfOrderDrop,
                                       std::nullopt});
         }
+        continue;
       }
-    } else {
-      // 2c. Geri sarildi: kopartilan gecmis ile yeni olaylar birlestirilip
-      // kronolojik yeniden oynatilir. stable_sort oldugu icin ayni damgada
-      // ESKI olay onde kalir.
-      std::vector<Olay> yeniden = std::move(kopartilan_);
-      kopartilan_.clear();
-      for (auto& e : kalan) {
-        yeniden.push_back(std::move(e));
+      if (!e.imu && e.stamp_ns > en_yeni_imu_ns_) {
+        ertelenen.push_back(std::move(e)); // kapsayan IMU henuz yok
+        continue;
       }
-      std::stable_sort(yeniden.begin(), yeniden.end(), once_gelir);
-      for (auto& e : yeniden) {
-        uygula(est, std::move(e));
+      kalan.push_back(std::move(e));
+    }
+    bekleyen_ = std::move(ertelenen);
+
+    if (!kalan.empty()) {
+      const TimeNs en_erken = kalan.front().stamp_ns;
+      if (en_erken >= son_ns_) {
+        oynat(est, kalan); // sirali akis
+      } else {
+        const bool sarildi = geri_sar(est, en_erken);
+        if (!sarildi) {
+          std::abort(); // siniflandirma asamasi bunu garanti etti
+        }
+        std::vector<Olay> yeniden = std::move(kopartilan_);
+        kopartilan_.clear();
+        for (auto& e : kalan) {
+          yeniden.push_back(std::move(e));
+        }
+        // stable_sort: ayni damgada ESKI olay onde kalir.
+        std::stable_sort(yeniden.begin(), yeniden.end(), once_gelir);
+        oynat(est, yeniden);
       }
     }
 
@@ -183,13 +216,13 @@ class MeasurementBuffer {
   /// Islenmis bir olay ve UYGULANMADAN ONCEKI tam durum.
   ///
   /// Snapshot KASTEN `Olay`'in disindadir: bekleyen kuyrukta ve siralama
-  /// sirasinda olaylar tasinir, snapshot ise 30 KB'in uzerindedir. Bekleyen
-  /// olayin tasimadigi bir snapshot ne kopyalanir ne de henuz yazilmamis
-  /// hâliyle dolasir.
+  /// sirasinda olaylar tasinir, snapshot ise 30 KB'in uzerindedir.
   struct Kayit {
     Olay olay;
     PipelineSnapshot once;
   };
+
+  static Scalar saniye(TimeNs fark) { return static_cast<Scalar>(fark) * Scalar(1e-9); }
 
   /// Ayni damgada IMU once gelir: olcum yayilmis durumu gorsun.
   static bool once_gelir(const Olay& a, const Olay& b) {
@@ -219,18 +252,20 @@ class MeasurementBuffer {
     }
   }
 
-  /// `t`'den itibaren geri sarar. Basarili ise gecmisin o noktadan sonraki
-  /// kismi `kopartilan_`a tasinir ve estimator o andaki tam snapshot'a doner.
+  /// `t` anina geri sarilabilir mi? Gecmisi DEGISTIRMEZ; siniflandirma
+  /// asamasinda olay basina sorulur.
+  bool geri_sarilabilir(TimeNs t) const {
+    const auto ilk = std::find_if(gecmis_.begin(), gecmis_.end(),
+                                  [t](const Kayit& k) { return k.olay.stamp_ns >= t; });
+    return ilk != gecmis_.end() && ilk->once.backend.stamp_ns <= t;
+  }
+
+  /// `t`'ye geri sarar; gecmisin o noktadan sonraki kismi `kopartilan_`a
+  /// tasinir ve estimator o andaki tam snapshot'a doner.
   bool geri_sar(Estimator& est, TimeNs t) {
     const auto ilk = std::find_if(gecmis_.begin(), gecmis_.end(),
                                   [t](const Kayit& k) { return k.olay.stamp_ns >= t; });
-    if (ilk == gecmis_.end()) {
-      return false; // gecmisin tamami t'den once: geri sarilacak bir sey yok
-    }
-    if (ilk->once.backend.stamp_ns > t) {
-      // En eski elimizdeki snapshot bile t'den SONRA — aradaki kayitlar
-      // kapasite tavani yuzunden dusurulmus. Bu noktaya donulemez; uydurma
-      // bir baslangictan yeniden oynatmak sessiz yanlis olurdu.
+    if (ilk == gecmis_.end() || ilk->once.backend.stamp_ns > t) {
       return false;
     }
 
@@ -246,27 +281,53 @@ class MeasurementBuffer {
     return true;
   }
 
-  void uygula(Estimator& est, Olay&& e) {
-    PipelineSnapshot once = est.save_snapshot();
-
-    if (e.imu) {
-      // dt YALNIZCA iki TimeNs farkindan; biriktirme yok (CONVENTIONS §6).
-      const TimeNs fark = e.stamp_ns - est.backend().stamp_ns();
-      est.predict(e.u, static_cast<Scalar>(fark) * Scalar(1e-9));
-    } else {
-      const ProcessingResult r = est.apply(*e.z);
-      if (e.yeni) {
-        sonuc_ekle(r);
+  /// `i`'den SONRA gelen, `t`'yi kapsayan ilk IMU ornegi. Ayni damgali IMU
+  /// zaten `i`'den once islenmis olur (once_gelir), o yuzden yalnizca ileri
+  /// bakilir.
+  static const ImuSample* kapsayan_imu(const std::vector<Olay>& dizi, std::size_t i, TimeNs t) {
+    for (std::size_t j = i + 1; j < dizi.size(); ++j) {
+      if (dizi[j].imu && dizi[j].stamp_ns >= t) {
+        return &dizi[j].u;
       }
     }
+    return nullptr;
+  }
 
-    son_ns_ = std::max(son_ns_, e.stamp_ns);
-    gecmis_.push_back(Kayit{std::move(e), std::move(once)});
+  void oynat(Estimator& est, std::vector<Olay>& dizi) {
+    for (std::size_t i = 0; i < dizi.size(); ++i) {
+      PipelineSnapshot once = est.save_snapshot();
+      Olay& e = dizi[i];
+
+      if (e.imu) {
+        est.predict(e.u, saniye(e.stamp_ns - est.backend().stamp_ns()));
+      } else {
+        const TimeNs simdi = est.backend().stamp_ns();
+        if (e.stamp_ns > simdi) {
+          // Olcum iki IMU ornegi arasinda: araligi damgada BOL.
+          const ImuSample* kapsayan = kapsayan_imu(dizi, i, e.stamp_ns);
+          if (kapsayan == nullptr) {
+            // Siniflandirma asamasi bunu imkansiz kilar. Sessizce onceki
+            // duruma uygulamak, olcumu YANLIS ana yazmak olurdu.
+            std::abort();
+          }
+          ImuSample parca = *kapsayan;
+          parca.stamp_ns = e.stamp_ns;
+          est.predict(parca, saniye(e.stamp_ns - simdi));
+        }
+        const ProcessingResult r = est.apply(*e.z);
+        if (e.yeni) {
+          sonuc_ekle(r);
+        }
+      }
+
+      son_ns_ = std::max(son_ns_, e.stamp_ns);
+      gecmis_.push_back(Kayit{std::move(e), std::move(once)});
+    }
   }
 
   /// Pencere disinda kalan ve kapasiteyi asan gecmisi dusurur.
   void budala() {
-    const TimeNs alt_sinir = pencere_alt_siniri(son_ns_);
+    const TimeNs alt_sinir = pencere_alt_siniri(std::max(son_ns_, en_yeni_imu_ns_));
     while (!gecmis_.empty() && gecmis_.front().olay.stamp_ns < alt_sinir) {
       gecmis_.pop_front();
     }
@@ -276,7 +337,9 @@ class MeasurementBuffer {
   }
 
   TimeNs pencere_ns_;
-  TimeNs son_ns_ = std::numeric_limits<TimeNs>::min();
+  bool baslatildi_ = false;
+  TimeNs son_ns_ = 0;
+  TimeNs en_yeni_imu_ns_ = std::numeric_limits<TimeNs>::min();
 
   std::vector<Olay> bekleyen_;
   std::deque<Kayit> gecmis_;
