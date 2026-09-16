@@ -65,6 +65,19 @@ struct DatasetEvent {
   Scalar forward_variance = 1;
 
   Eigen::Quaternion<Scalar> orientation_wb = Eigen::Quaternion<Scalar>::Identity();
+
+  /// Kaynak kayit, veri setinin KENDI isaretine gore eksik/ara-degerlenmis mi.
+  ///
+  /// KITTI kisa OXTS kesintilerinde tum degerleri dogrusal olarak ara-degerler
+  /// ve bunu son uc kipi (-1) yaparak isaretler. Boyle bir kareden uretilen
+  /// TUM olaylarda bu bayrak true'dur.
+  ///
+  /// FAZ 1 CHECKPOINT A BU BAYRAGA GORE HICBIR SEY ATMAZ. Adaptorun isi veri
+  /// seti gercegini KAYIPSIZ tasimaktir; ara-degerlenmis bir olcumun filtreye
+  /// verilip verilmeyecegi bir POLITIKA kararidir ve kosucuda acikca
+  /// yazilacaktir. Bayrak tasinmasaydi o karar sessizce "hepsini kullan"
+  /// olurdu.
+  bool source_interpolated = false;
 };
 
 /// Damgaya gore siralama olcutu. Ayni damgada IMU once gelir — tampon da ayni

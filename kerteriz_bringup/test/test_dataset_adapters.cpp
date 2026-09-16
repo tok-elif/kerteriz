@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <gtest/gtest.h>
 #include <limits>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -147,6 +148,52 @@ TEST(KittiOxts, MapsFieldsByDocumentedIndex) {
   EXPECT_EQ(r.numsats, 26);
 }
 
+/// 30 alanli bir OXTS satiri kurar; istenen indeksler degistirilebilir.
+std::string oxts_satiri(const std::map<int, std::string>& degisiklik) {
+  std::string s;
+  for (int i = 0; i < 30; ++i) {
+    const auto it = degisiklik.find(i);
+    s += (it == degisiklik.end() ? std::to_string(i) : it->second);
+    s += " ";
+  }
+  return s;
+}
+
+TEST(KittiOxts, CategoricalFieldsAreExactIntegers) {
+  // navstat, numsats, posmode, velmode, orimode SAYISAL BUYUKLUK DEGIL, kod
+  // degerleridir. Kayan noktaya cevirip kirpmak "3.7"yi sessizce 3 yapardi.
+  OxtsRecord r;
+  ASSERT_TRUE(parse_oxts_line(oxts_satiri({}), r));
+  EXPECT_EQ(r.navstat, 25);
+  EXPECT_EQ(r.numsats, 26);
+  EXPECT_EQ(r.posmode, 27);
+  EXPECT_EQ(r.velmode, 28);
+  EXPECT_EQ(r.orimode, 29);
+  EXPECT_FALSE(r.interpolated_missing);
+
+  for (int alan = 25; alan < 30; ++alan) {
+    for (const char* bozuk : {"3.7", "2e0", "abc", "", "5.0"}) {
+      EXPECT_FALSE(parse_oxts_line(oxts_satiri({{alan, bozuk}}), r))
+          << "alan " << alan << " kabul etti: '" << bozuk << "'";
+    }
+  }
+}
+
+TEST(KittiOxts, MinusOneIsAValidMissingMarkerNotAParseError) {
+  OxtsRecord r;
+  ASSERT_TRUE(parse_oxts_line(oxts_satiri({{27, "-1"}, {28, "-1"}, {29, "-1"}}), r));
+  EXPECT_EQ(r.posmode, -1);
+  EXPECT_EQ(r.velmode, -1);
+  EXPECT_EQ(r.orimode, -1);
+  EXPECT_TRUE(r.interpolated_missing);
+
+  // Tek bir -1 de yeterlidir.
+  ASSERT_TRUE(parse_oxts_line(oxts_satiri({{28, "-1"}}), r));
+  EXPECT_TRUE(r.interpolated_missing);
+  ASSERT_TRUE(parse_oxts_line(oxts_satiri({{25, "-1"}}), r));
+  EXPECT_FALSE(r.interpolated_missing) << "navstat isaretci alanlarindan biri DEGIL";
+}
+
 TEST(KittiOxts, OrientationFollowsDevkitZyxOrder) {
   OxtsRecord r;
   r.roll = 0.0;
@@ -276,6 +323,35 @@ TEST(KittiLoader, RejectsMalformedFrameInsteadOfSkipping) {
   const auto d = kerteriz_bringup::load_kitti_oxts(cfg, olaylar);
   EXPECT_FALSE(d.ok) << "bozuk kare sessizce atlandi";
   EXPECT_NE(d.message.find("0000000001"), std::string::npos) << d.message;
+}
+
+TEST(KittiLoader, OutageFrameMarksEveryDerivedEventAsInterpolated) {
+  // Fixture'in 3. karesi (indeks 2) bilerek posmode/velmode/orimode = -1'dir.
+  // KITTI o karenin TUM degerlerini dogrusal ara-degerlemistir; bayrak o
+  // kareden uretilen HER olayda tasinmalidir.
+  //
+  // Checkpoint A hicbir seyi ATMAZ: dusurulseydi kayip bilgi sessizce yok
+  // olur, politika karari da kosucuda gorunmez hale gelirdi.
+  KittiConfig cfg;
+  cfg.dataset_dir = fixture("kitti_sentetik");
+  std::vector<DatasetEvent> olaylar;
+  ASSERT_TRUE(kerteriz_bringup::load_kitti_oxts(cfg, olaylar).ok);
+  ASSERT_EQ(olaylar.size(), 12U) << "kesinti karesi dusurulmus";
+
+  const TimeNs kesinti_ns = olaylar.back().stamp_ns;
+  int isaretli = 0;
+  int temiz = 0;
+  for (const auto& e : olaylar) {
+    if (e.stamp_ns == kesinti_ns) {
+      EXPECT_TRUE(e.source_interpolated) << "kesinti karesinden uretilen olay isaretlenmemis";
+      ++isaretli;
+    } else {
+      EXPECT_FALSE(e.source_interpolated) << "saglam kare yanlislikla isaretlenmis";
+      ++temiz;
+    }
+  }
+  EXPECT_EQ(isaretli, 4) << "IMU + GNSS konum + GNSS hiz + referans";
+  EXPECT_EQ(temiz, 8);
 }
 
 TEST(KittiLoader, MissingDirectoryIsAnError) {

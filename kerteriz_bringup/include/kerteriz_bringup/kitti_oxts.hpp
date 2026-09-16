@@ -52,6 +52,20 @@
 /// olarak BAGIMSIZ DEGILDIR. Buradan cikan ATE bir entegrasyon/MVP
 /// dogrulamasidir; bagimsiz bir dogruluk deneyi (SPEC §8 E2) degildir.
 ///
+/// ===================== EKSIK BILGI ISARETI TASINIR ==========================
+///
+/// Resmi sozlesmeye gore KITTI, kisa OXTS iletisim kesintilerinde kaydin TUM
+/// degerlerini dogrusal olarak ara-degerler ve bunu son uc kipi
+/// (`posmode`, `velmode`, `orimode`) -1 yaparak isaretler. Bu isaret
+/// `OxtsRecord::interpolated_missing` ve oradan `DatasetEvent::source_interpolated`
+/// olarak TASINIR.
+///
+/// CHECKPOINT A BU BAYRAGA GORE HICBIR SEY ATMAZ. Adaptorun isi veri seti
+/// gercegini KAYIPSIZ tasimaktir; ara-degerlenmis bir GNSS'in olcum olarak
+/// kullanilip kullanilmayacagi, IMU'nun ne yapilacagi ve referansin ATE'ye
+/// girip girmeyecegi POLITIKA kararlaridir ve kosucuda (Checkpoint B) ACIKCA
+/// yazilacaktir. Bayrak tasinmasaydi o karar sessizce "hepsini kullan" olurdu.
+///
 /// ============================== KAPSAM ======================================
 ///
 /// Goruntu ve LiDAR AYRISTIRILMAZ. Yalnizca kestirime giren navigasyon verisi.
@@ -89,10 +103,28 @@ struct OxtsRecord {
   Scalar ax = 0, ay = 0, az = 0;
   Scalar wx = 0, wy = 0, wz = 0;
   Scalar pos_accuracy = 0, vel_accuracy = 0;
-  int navstat = 0, numsats = 0;
+
+  // Kategorik alanlar TAM TAMSAYIDIR. Kayan noktaya cevirip kirpmak "3.7"yi
+  // sessizce 3 yapardi; bunlar sayisal buyukluk degil, kod degerleridir.
+  int navstat = 0;
+  int numsats = 0;
+  int posmode = 0;
+  int velmode = 0;
+  int orimode = 0;
+
+  /// Veri setinin KENDI eksik-bilgi isareti. KITTI kisa iletisim
+  /// kesintilerinde tum alanlari dogrusal ara-degerler ve son uc kipi -1
+  /// yapar. Burada yalnizca TASINIR; enum/aralik semantigi UYDURULMAZ.
+  bool interpolated_missing = false;
 };
 
 inline constexpr int kOxtsFieldCount = 30;
+
+/// Kategorik alanlarin ilk indeksi: navstat, numsats, posmode, velmode, orimode.
+inline constexpr int kOxtsFirstCategoricalField = 25;
+
+/// Eksik bilgi isaretcisi (KITTI sozlesmesi).
+inline constexpr int kOxtsMissingMode = -1;
 
 namespace detail {
 
@@ -105,6 +137,46 @@ constexpr std::int64_t days_from_civil(std::int64_t y, unsigned m, unsigned d) {
   const unsigned doy = (153U * (m + (m > 2 ? -3U : 9U)) + 2U) / 5U + d - 1U;
   const unsigned doe = yoe * 365U + yoe / 4U - yoe / 100U + doy;
   return era * 146097LL + static_cast<std::int64_t>(doe) - 719468LL;
+}
+
+/// TAM ONDALIK ISARETLI TAMSAYI. Ondalik nokta, ussel gosterim veya artik
+/// simge iceren bir alan tamsayi DEGILDIR ve reddedilir.
+///
+/// NOT: NCLT tarafinda ayni sozlesmeyi zorlayan ayri bir ayristirici vardir.
+/// Ortak bir yardimciya tasimak ayri bir temizlik isidir; bu adimin kapsami
+/// disindadir.
+inline bool tam_isaretli_sayi(const std::string& token, int& out) {
+  std::size_t i = 0;
+  while (i < token.size() && std::isspace(static_cast<unsigned char>(token[i])) != 0) {
+    ++i;
+  }
+  bool eksi = false;
+  if (i < token.size() && (token[i] == '+' || token[i] == '-')) {
+    eksi = token[i] == '-';
+    ++i;
+  }
+  const std::size_t rakam_bas = i;
+  std::int64_t deger = 0;
+  for (; i < token.size(); ++i) {
+    const auto c = static_cast<unsigned char>(token[i]);
+    if (std::isdigit(c) == 0) {
+      break;
+    }
+    deger = deger * 10 + (token[i] - '0');
+    if (deger > 2147483647LL) {
+      return false; // int araligini asiyor
+    }
+  }
+  if (i == rakam_bas) {
+    return false;
+  }
+  for (std::size_t k = i; k < token.size(); ++k) {
+    if (std::isspace(static_cast<unsigned char>(token[k])) == 0) {
+      return false;
+    }
+  }
+  out = static_cast<int>(eksi ? -deger : deger);
+  return true;
 }
 
 inline bool tam_sayi(const std::string& s, std::int64_t& out) {
@@ -176,22 +248,45 @@ inline bool parse_kitti_timestamp(const std::string& satir, kerteriz::TimeNs& ou
 }
 
 /// Tek bir OXTS satiri. TAM 30 alan bekler; eksik veya fazla alan HATADIR.
+///
+/// Alanlar once HAM SIMGE olarak bolunur: ilk 25'i sayisal buyukluktur, son
+/// 5'i KATEGORIKTIR ve tam tamsayi olarak okunur. Hepsini kayan noktaya
+/// cevirip kirpmak, "3.7" gibi bozuk bir kip degerini sessizce 3 yapardi.
 inline bool parse_oxts_line(const std::string& satir, OxtsRecord& out) {
   std::istringstream akis(satir);
-  std::vector<Scalar> v;
-  v.reserve(kOxtsFieldCount);
-  Scalar x = 0;
-  while (akis >> x) {
-    v.push_back(x);
-    if (v.size() > static_cast<std::size_t>(kOxtsFieldCount)) {
+  std::vector<std::string> parcalar;
+  parcalar.reserve(kOxtsFieldCount);
+  std::string simge;
+  while (akis >> simge) {
+    parcalar.push_back(simge);
+    if (parcalar.size() > static_cast<std::size_t>(kOxtsFieldCount)) {
       return false; // fazla alan
     }
   }
-  if (!akis.eof()) {
-    return false; // sayiya cevrilemeyen simge
-  }
-  if (v.size() != static_cast<std::size_t>(kOxtsFieldCount)) {
+  if (parcalar.size() != static_cast<std::size_t>(kOxtsFieldCount)) {
     return false;
+  }
+
+  std::vector<Scalar> v(static_cast<std::size_t>(kOxtsFirstCategoricalField), Scalar(0));
+  for (int i = 0; i < kOxtsFirstCategoricalField; ++i) {
+    const auto& t = parcalar[static_cast<std::size_t>(i)];
+    std::size_t tuketilen = 0;
+    try {
+      v[static_cast<std::size_t>(i)] = std::stod(t, &tuketilen);
+    } catch (...) {
+      return false;
+    }
+    if (tuketilen != t.size()) {
+      return false; // "1.5abc" gibi kismi sayi
+    }
+  }
+
+  int kategorik[5] = {};
+  for (int i = 0; i < 5; ++i) {
+    if (!detail::tam_isaretli_sayi(
+            parcalar[static_cast<std::size_t>(kOxtsFirstCategoricalField + i)], kategorik[i])) {
+      return false;
+    }
   }
 
   out.lat_deg = v[0];
@@ -211,8 +306,16 @@ inline bool parse_oxts_line(const std::string& satir, OxtsRecord& out) {
   out.wz = v[19];
   out.pos_accuracy = v[23];
   out.vel_accuracy = v[24];
-  out.navstat = static_cast<int>(v[25]);
-  out.numsats = static_cast<int>(v[26]);
+  out.navstat = kategorik[0];
+  out.numsats = kategorik[1];
+  out.posmode = kategorik[2];
+  out.velmode = kategorik[3];
+  out.orimode = kategorik[4];
+
+  // KITTI sozlesmesi: kisa kesintide tum degerler dogrusal ara-degerlenir ve
+  // son uc kip -1 yapilir.
+  out.interpolated_missing = out.posmode == kOxtsMissingMode || out.velmode == kOxtsMissingMode ||
+                             out.orimode == kOxtsMissingMode;
   return true;
 }
 
@@ -317,6 +420,7 @@ inline ParseStatus load_kitti_oxts(const KittiConfig& cfg, std::vector<DatasetEv
       e.stamp_ns = t;
       e.kind = DatasetEventKind::kImu;
       e.imu = kerteriz::ImuSample{t, Vec3(r.wx, r.wy, r.wz), Vec3(r.ax, r.ay, r.az)};
+      e.source_interpolated = r.interpolated_missing;
       olaylar.push_back(e);
     }
     if (cfg.emit_gnss_position) {
@@ -324,6 +428,7 @@ inline ParseStatus load_kitti_oxts(const KittiConfig& cfg, std::vector<DatasetEv
       e.stamp_ns = t;
       e.kind = DatasetEventKind::kGnssPosition;
       e.position_w = p_enu;
+      e.source_interpolated = r.interpolated_missing;
       const Scalar s =
           std::max(cfg.min_position_sigma_m, cfg.position_sigma_scale * r.pos_accuracy);
       e.position_cov_w = Eigen::Matrix<Scalar, 3, 3>::Identity() * (s * s);
@@ -334,6 +439,7 @@ inline ParseStatus load_kitti_oxts(const KittiConfig& cfg, std::vector<DatasetEv
       e.stamp_ns = t;
       e.kind = DatasetEventKind::kGnssVelocity;
       e.velocity_w = Vec3(r.ve, r.vn, r.vu); // ENU
+      e.source_interpolated = r.interpolated_missing;
       const Scalar s =
           std::max(cfg.min_velocity_sigma_mps, cfg.velocity_sigma_scale * r.vel_accuracy);
       e.velocity_cov_w = Eigen::Matrix<Scalar, 3, 3>::Identity() * (s * s);
@@ -344,6 +450,7 @@ inline ParseStatus load_kitti_oxts(const KittiConfig& cfg, std::vector<DatasetEv
       e.stamp_ns = t;
       e.kind = DatasetEventKind::kReferencePose;
       e.position_w = p_enu;
+      e.source_interpolated = r.interpolated_missing;
       e.orientation_wb = oxts_orientation(r);
       olaylar.push_back(e);
     }
