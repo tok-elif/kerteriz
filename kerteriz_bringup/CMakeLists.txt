@@ -15,6 +15,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(ament_cmake REQUIRED)
 find_package(kerteriz_core REQUIRED)
 
+# ROS bagimliliklari YALNIZCA harici taban cizgisi kosturmasi icindir
+# (robot_localization'a veri seti yayinlamak ve ciktisini kaydetmek).
+# Ayristiricilar ve Kerteriz kosucusu ROS'suzdur.
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(rosgraph_msgs REQUIRED)
+
 add_library(kerteriz_bringup_adapters INTERFACE)
 add_library(kerteriz::bringup_adapters ALIAS kerteriz_bringup_adapters)
 target_include_directories(kerteriz_bringup_adapters INTERFACE
@@ -23,6 +31,29 @@ target_include_directories(kerteriz_bringup_adapters INTERFACE
 target_link_libraries(kerteriz_bringup_adapters INTERFACE kerteriz::core)
 target_compile_features(kerteriz_bringup_adapters INTERFACE cxx_std_17)
 
+# Gercek veri seti kosucusu (Checkpoint B). ROS'a BAGLI DEGILDIR: veri seti
+# cevrimdisi okunur, uretim zinciri dogrudan cagrilir.
+add_executable(kerteriz_kitti_runner src/kitti_runner_main.cpp)
+target_link_libraries(kerteriz_kitti_runner kerteriz_bringup_adapters)
+
+add_executable(kerteriz_ate src/ate_main.cpp)
+target_link_libraries(kerteriz_ate kerteriz_bringup_adapters)
+
+# --- HARICI taban cizgisi kosturmasi (Kerteriz filtresinin parcasi DEGIL) ---
+add_executable(kerteriz_kitti_baseline_publisher src/kitti_baseline_publisher_main.cpp)
+target_link_libraries(kerteriz_kitti_baseline_publisher kerteriz_bringup_adapters)
+ament_target_dependencies(kerteriz_kitti_baseline_publisher
+  rclcpp sensor_msgs nav_msgs rosgraph_msgs)
+
+add_executable(kerteriz_baseline_recorder src/baseline_recorder_main.cpp)
+ament_target_dependencies(kerteriz_baseline_recorder rclcpp nav_msgs)
+
+install(TARGETS
+  kerteriz_kitti_runner
+  kerteriz_ate
+  kerteriz_kitti_baseline_publisher
+  kerteriz_baseline_recorder
+  DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 install(DIRECTORY launch config DESTINATION share/${PROJECT_NAME})
 
@@ -43,6 +74,11 @@ if(KERTERIZ_BRINGUP_BUILD_TESTING)
 
   ament_add_gtest(test_ate test/test_ate.cpp)
   target_link_libraries(test_ate kerteriz_bringup_adapters)
+
+  ament_add_gtest(test_kitti_runner test/test_kitti_runner.cpp)
+  target_link_libraries(test_kitti_runner kerteriz_bringup_adapters)
+  target_compile_definitions(test_kitti_runner
+    PRIVATE KERTERIZ_FIXTURE_DIR="${KERTERIZ_FIXTURE_DIR}")
 
   ament_add_gtest(test_dataset_adapters test/test_dataset_adapters.cpp)
   target_link_libraries(test_dataset_adapters kerteriz_bringup_adapters)

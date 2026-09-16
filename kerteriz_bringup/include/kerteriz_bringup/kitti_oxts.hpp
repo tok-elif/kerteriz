@@ -388,7 +388,7 @@ inline ParseStatus load_kitti_oxts(const KittiConfig& cfg, std::vector<DatasetEv
   olaylar.reserve(damgalar.size() * 3);
 
   for (std::size_t k = 0; k < damgalar.size(); ++k) {
-    char ad[32];
+    char ad[64];
     std::snprintf(ad, sizeof(ad), "/oxts/data/%010zu.txt", k);
     const std::string yol = cfg.dataset_dir + ad;
 
