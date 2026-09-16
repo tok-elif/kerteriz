@@ -23,6 +23,12 @@ Thumbs.db
 
 # data — veri setleri repoya girmez
 data/
+# ISTISNA: KITTI raw duzeninde OXTS dosyalari `oxts/data/` altindadir ve
+# sentetik test fixture'i o duzeni birebir temsil etmek zorundadir. Bu
+# istisna olmadan fixture sessizce commit'lenmez; testler yerelde gecer,
+# CI'da duser. Gercek veri seti yine repoya GIRMEZ.
+!kerteriz_bringup/test/fixtures/**/data/
+!kerteriz_bringup/test/fixtures/**/data/**
 *.bag
 *.db3
 *.mcap

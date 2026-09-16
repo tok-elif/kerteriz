@@ -2,10 +2,14 @@
 <package format="3">
   <name>kerteriz_bringup</name>
   <version>0.1.0</version>
-  <description>Launch dosyalari, YAML yapilandirmasi ve veri seti adaptorleri.</description>
+  <description>Launch dosyalari, YAML yapilandirmasi ve veri seti adaptorleri (KITTI OXTS, NCLT).</description>
   <maintainer email="tokelifw@gmail.com">Kerteriz</maintainer>
   <license>MIT</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>kerteriz_core</depend>
   <exec_depend>kerteriz_ros</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>
