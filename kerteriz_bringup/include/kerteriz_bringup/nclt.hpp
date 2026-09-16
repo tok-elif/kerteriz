@@ -96,32 +96,19 @@ inline bool nclt_utime_to_ns(std::int64_t utime_us, kerteriz::TimeNs& out) {
   return true;
 }
 
-/// Virgulle ayrilmis bir satiri TAM `beklenen` alan olarak ayristirir.
-/// Eksik, fazla veya sayisal olmayan alan HATADIR — sessiz kabul yoktur.
-inline bool parse_csv_row(const std::string& satir, int beklenen, std::vector<Scalar>& out) {
+/// Virgulle ayrilmis satiri TAM `beklenen` parcaya boler. Alanlar HAM METIN
+/// olarak doner; sayisal yorum cagirana aittir. Bu ayrim kasitlidir: UTIME
+/// alani tamsayi, digerleri kayan noktadir ve ayni fonksiyon ikisini de
+/// sayiya cevirseydi UTIME zorunlu olarak kayan noktadan gecerdi.
+inline bool split_csv(const std::string& satir, int beklenen, std::vector<std::string>& out) {
   out.clear();
   out.reserve(static_cast<std::size_t>(beklenen));
 
   std::size_t bas = 0;
   while (true) {
     const std::size_t virgul = satir.find(',', bas);
-    const std::string alan =
-        satir.substr(bas, virgul == std::string::npos ? std::string::npos : virgul - bas);
-
-    std::size_t tuketilen = 0;
-    Scalar deger = 0;
-    try {
-      deger = std::stod(alan, &tuketilen);
-    } catch (...) {
-      return false;
-    }
-    // Alanin GERI KALANI yalnizca bosluk olabilir; "1.5abc" kabul edilmez.
-    for (std::size_t i = tuketilen; i < alan.size(); ++i) {
-      if (std::isspace(static_cast<unsigned char>(alan[i])) == 0) {
-        return false;
-      }
-    }
-    out.push_back(deger);
+    out.push_back(
+        satir.substr(bas, virgul == std::string::npos ? std::string::npos : virgul - bas));
     if (out.size() > static_cast<std::size_t>(beklenen)) {
       return false;
     }
@@ -133,18 +120,109 @@ inline bool parse_csv_row(const std::string& satir, int beklenen, std::vector<Sc
   return out.size() == static_cast<std::size_t>(beklenen);
 }
 
+/// TAM ONDALIK TAMSAYI ayristirici — mutlak zaman icin.
+///
+/// `double` ARA ADIMI YOKTUR (CONVENTIONS §6). NCLT UTIME 16 hanelidir;
+/// `double`'in 53 bitlik mantisi ~9.0e15'e kadar tamsayilari tam tasir,
+/// yani bugunku degerler sinira YAKINDIR ve ileri tarihli oturumlarda sessizce
+/// yuvarlanabilirdi. Ondalik nokta, ussel gosterim veya artik simge iceren
+/// bir alan tamsayi DEGILDIR ve reddedilir.
+inline bool parse_int64_token(const std::string& token, std::int64_t& out) {
+  std::size_t i = 0;
+  while (i < token.size() && std::isspace(static_cast<unsigned char>(token[i])) != 0) {
+    ++i;
+  }
+  bool eksi = false;
+  if (i < token.size() && (token[i] == '+' || token[i] == '-')) {
+    eksi = token[i] == '-';
+    ++i;
+  }
+  const std::size_t rakam_bas = i;
+  std::int64_t deger = 0;
+  constexpr std::int64_t kMaks = std::numeric_limits<std::int64_t>::max();
+  for (; i < token.size(); ++i) {
+    const unsigned char c = static_cast<unsigned char>(token[i]);
+    if (std::isdigit(c) == 0) {
+      break;
+    }
+    const int basamak = token[i] - '0';
+    if (deger > (kMaks - basamak) / 10) {
+      return false; // tasma
+    }
+    deger = deger * 10 + basamak;
+  }
+  if (i == rakam_bas) {
+    return false; // hic rakam yok
+  }
+  // Geri kalan YALNIZCA bosluk olabilir: "...0.5", "1.3e15", "...abc" reddedilir.
+  for (std::size_t k = i; k < token.size(); ++k) {
+    if (std::isspace(static_cast<unsigned char>(token[k])) == 0) {
+      return false;
+    }
+  }
+  out = eksi ? -deger : deger;
+  return true;
+}
+
+/// Tek bir alani kayan noktaya cevirir. "1.5abc" gibi kismi sayilar reddedilir.
+inline bool parse_scalar_token(const std::string& token, Scalar& out) {
+  std::size_t tuketilen = 0;
+  try {
+    out = std::stod(token, &tuketilen);
+  } catch (...) {
+    return false;
+  }
+  for (std::size_t i = tuketilen; i < token.size(); ++i) {
+    if (std::isspace(static_cast<unsigned char>(token[i])) == 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Virgulle ayrilmis bir satiri TAM `beklenen` SAYISAL alan olarak ayristirir.
+/// Eksik, fazla veya sayisal olmayan alan HATADIR — sessiz kabul yoktur.
+///
+/// UTIME icin KULLANILMAZ; o alan `parse_int64_token` ile okunur.
+inline bool parse_csv_row(const std::string& satir, int beklenen, std::vector<Scalar>& out) {
+  std::vector<std::string> parcalar;
+  if (!split_csv(satir, beklenen, parcalar)) {
+    return false;
+  }
+  out.clear();
+  out.reserve(parcalar.size());
+  for (const auto& t : parcalar) {
+    Scalar deger = 0;
+    if (!parse_scalar_token(t, deger)) {
+      return false;
+    }
+    out.push_back(deger);
+  }
+  return true;
+}
+
 inline constexpr int kNcltMs25FieldCount = 10;
 inline constexpr int kNcltGpsFieldCount = 8;
 
 /// `ms25.csv` tek satiri -> IMU olayi (REP-103 govde ekseninde).
 inline bool parse_nclt_ms25_line(const std::string& satir, DatasetEvent& out) {
-  std::vector<Scalar> v;
-  if (!parse_csv_row(satir, kNcltMs25FieldCount, v)) {
+  std::vector<std::string> parcalar;
+  if (!split_csv(satir, kNcltMs25FieldCount, parcalar)) {
     return false;
   }
+  std::int64_t utime_us = 0;
+  if (!parse_int64_token(parcalar[0], utime_us)) {
+    return false; // UTIME tamsayidir; kayan noktadan GECMEZ
+  }
   kerteriz::TimeNs t = 0;
-  if (!nclt_utime_to_ns(static_cast<std::int64_t>(v[0]), t)) {
+  if (!nclt_utime_to_ns(utime_us, t)) {
     return false;
+  }
+  Scalar v[kNcltMs25FieldCount] = {};
+  for (int i = 1; i < kNcltMs25FieldCount; ++i) {
+    if (!parse_scalar_token(parcalar[static_cast<std::size_t>(i)], v[i])) {
+      return false;
+    }
   }
 
   const Vec3 ivme_nclt(v[4], v[5], v[6]);
@@ -158,24 +236,44 @@ inline bool parse_nclt_ms25_line(const std::string& satir, DatasetEvent& out) {
   return true;
 }
 
-/// `gps.csv` / `gps_rtk.csv` tek satiri. Fix modu 2'den kucukse olay
+/// Faz 1 `GnssPosition` UC BOYUTLUDUR, dolayisiyla yukseklik de gecerli
+/// olmalidir. Resmi sozlesme (Tablo 7): 2 = enlem/boylam iyi, 3 = yukseklik
+/// de iyi. Bu yuzden esik 3'tur.
+inline constexpr int kNcltMinFixMode3d = 3;
+
+/// `gps.csv` / `gps_rtk.csv` tek satiri. Fix modu 3D icin yetersizse olay
 /// URETILMEZ (`gecerli = false`); bu bir ayristirma hatasi DEGILDIR.
+///
+/// Mod 2 kaydini buyuk bir dusey kovaryansla 3D'ye ZORLAMIYORUZ: veri seti o
+/// kayit icin yukseklik hakkinda "gecersiz" diyor, "belirsiz" degil. Uydurma
+/// bir sigma ile gecersiz veriyi olcume cevirmek sessiz bir sapma kaynagi
+/// olurdu. Iki boyutlu bir olcum modeli de EKLENMEDI (kapsam disi).
 inline bool parse_nclt_gps_line(const std::string& satir, const EnuProjector& izdusum,
                                 Scalar sigma_m, const Vec3& lever_arm_b, DatasetEvent& out,
                                 bool& gecerli) {
-  std::vector<Scalar> v;
-  if (!parse_csv_row(satir, kNcltGpsFieldCount, v)) {
+  std::vector<std::string> parcalar;
+  if (!split_csv(satir, kNcltGpsFieldCount, parcalar)) {
     return false;
   }
+  std::int64_t utime_us = 0;
+  if (!parse_int64_token(parcalar[0], utime_us)) {
+    return false; // UTIME tamsayidir; kayan noktadan GECMEZ
+  }
   kerteriz::TimeNs t = 0;
-  if (!nclt_utime_to_ns(static_cast<std::int64_t>(v[0]), t)) {
+  if (!nclt_utime_to_ns(utime_us, t)) {
     return false;
+  }
+  Scalar v[kNcltGpsFieldCount] = {};
+  for (int i = 1; i < kNcltGpsFieldCount; ++i) {
+    if (!parse_scalar_token(parcalar[static_cast<std::size_t>(i)], v[i])) {
+      return false;
+    }
   }
 
   const int fix = static_cast<int>(v[1]);
-  if (fix < 2) {
+  if (fix < kNcltMinFixMode3d) {
     gecerli = false;
-    return true; // gecerli satir, kullanilabilir fix yok
+    return true; // gecerli satir, 3D icin yeterli fix yok
   }
 
   out = DatasetEvent{};
@@ -194,6 +292,10 @@ struct NcltConfig {
   Scalar gps_sigma_m = 3.0;
   /// GNSS anteninin IMU'ya gore konumu, REP-103 govde ekseninde.
   /// Varsayilan Tablo 4'ten turetilir: x_imu,rtk = x_body,rtk - x_body,imu.
+  ///
+  /// SU AN YALNIZCA YAPILANDIRMA VERISIDIR. Checkpoint B'deki veri seti
+  /// kosucusu bunu `GnssPosition`'in `p_BS` parametresine GERCEKTEN gececek;
+  /// olcum modeli kol duzeltmesini zaten destekliyor (F1.4).
   Vec3 gnss_lever_arm_b =
       nclt_body_to_rep103(Vec3(kNcltRtkOffsetBodyNclt - kNcltImuOffsetBodyNclt));
   bool explicit_origin = false;
@@ -242,11 +344,25 @@ inline ParseStatus load_nclt(const NcltConfig& cfg, std::vector<DatasetEvent>& o
         continue;
       }
       if (!orijin_kuruldu) {
-        std::vector<Scalar> v;
-        if (!parse_csv_row(satir, kNcltGpsFieldCount, v)) {
+        // Orijin de ancak TAM 3D bir fix'ten kurulabilir: yuksekligi gecersiz
+        // bir kayitla orijin secmek tum yorungeye sabit bir dusey sapma
+        // enjekte ederdi.
+        std::vector<std::string> parcalar;
+        if (!split_csv(satir, kNcltGpsFieldCount, parcalar)) {
           return ParseStatus::failure(cfg.gps_csv + ":" + std::to_string(no) + " bozuk gps satiri");
         }
-        if (static_cast<int>(v[1]) < 2) {
+        std::int64_t utime_us = 0;
+        if (!parse_int64_token(parcalar[0], utime_us)) {
+          return ParseStatus::failure(cfg.gps_csv + ":" + std::to_string(no) + " bozuk UTIME");
+        }
+        Scalar v[kNcltGpsFieldCount] = {};
+        for (int i = 1; i < kNcltGpsFieldCount; ++i) {
+          if (!parse_scalar_token(parcalar[static_cast<std::size_t>(i)], v[i])) {
+            return ParseStatus::failure(cfg.gps_csv + ":" + std::to_string(no) +
+                                        " bozuk gps satiri");
+          }
+        }
+        if (static_cast<int>(v[1]) < kNcltMinFixMode3d) {
           continue;
         }
         orijin = Llh{v[3], v[4], v[5]};

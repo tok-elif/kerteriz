@@ -289,6 +289,46 @@ TEST(KittiLoader, MissingDirectoryIsAnError) {
 // NCLT
 // =============================================================================
 
+TEST(NcltTime, UtimeIsParsedAsExactIntegerWithoutFloatingPoint) {
+  // Mutlak zaman hicbir asamada kayan noktadan GECMEZ (CONVENTIONS §6).
+  // 16 haneli UTIME, double'in tam tamsayi araliginin (~9.0e15) sinirindadir;
+  // ondalik/ussel gosterim veya artik simge tamsayi degildir ve REDDEDILIR.
+  std::int64_t v = 0;
+  ASSERT_TRUE(kerteriz_bringup::parse_int64_token("1326036000000000", v));
+  EXPECT_EQ(v, 1326036000000000LL);
+
+  EXPECT_FALSE(kerteriz_bringup::parse_int64_token("1326036000000000.5", v)) << "ondalik";
+  EXPECT_FALSE(kerteriz_bringup::parse_int64_token("1.326036e15", v)) << "ussel gosterim";
+  EXPECT_FALSE(kerteriz_bringup::parse_int64_token("1326036000000000abc", v)) << "artik simge";
+  EXPECT_FALSE(kerteriz_bringup::parse_int64_token("", v));
+  EXPECT_FALSE(kerteriz_bringup::parse_int64_token("abc", v));
+  EXPECT_FALSE(kerteriz_bringup::parse_int64_token("99999999999999999999", v)) << "tasma";
+
+  // Isaret ayristirilir; negatif deger UTIME olarak sonra reddedilir.
+  ASSERT_TRUE(kerteriz_bringup::parse_int64_token("-1", v));
+  EXPECT_EQ(v, -1);
+  kerteriz::TimeNs t = 0;
+  EXPECT_FALSE(kerteriz_bringup::nclt_utime_to_ns(v, t)) << "negatif utime kabul edildi";
+}
+
+TEST(NcltTime, RowParsersRejectNonIntegerUtime) {
+  // Hem ms25 hem GPS yolu AYNI tam ayristiriciyi kullanmali.
+  DatasetEvent e;
+  EXPECT_FALSE(
+      parse_nclt_ms25_line("1326036000000000.5,0.1,0.2,0.3,1.0,2.0,-9.8,0.01,0.02,0.03", e));
+  EXPECT_FALSE(parse_nclt_ms25_line("1.326036e15,0.1,0.2,0.3,1.0,2.0,-9.8,0.01,0.02,0.03", e));
+  EXPECT_FALSE(parse_nclt_ms25_line("-1,0.1,0.2,0.3,1.0,2.0,-9.8,0.01,0.02,0.03", e));
+
+  const EnuProjector izdusum(Llh{0.738168521, -1.461022891, 270.0});
+  bool gecerli = false;
+  EXPECT_FALSE(parse_nclt_gps_line("1326036000000000.5,3,9,0.7381,-1.4610,270.0,0,1.4", izdusum,
+                                   3.0, Vec3::Zero(), e, gecerli));
+  EXPECT_FALSE(parse_nclt_gps_line("1.326036e15,3,9,0.7381,-1.4610,270.0,0,1.4", izdusum, 3.0,
+                                   Vec3::Zero(), e, gecerli));
+  EXPECT_FALSE(parse_nclt_gps_line("-1,3,9,0.7381,-1.4610,270.0,0,1.4", izdusum, 3.0, Vec3::Zero(),
+                                   e, gecerli));
+}
+
 TEST(NcltTime, UtimeMicrosecondsBecomeNanoseconds) {
   TimeNs t = 0;
   ASSERT_TRUE(kerteriz_bringup::nclt_utime_to_ns(1326036000000000LL, t));
@@ -333,7 +373,10 @@ TEST(NcltMs25, RejectsWrongFieldCount) {
   EXPECT_FALSE(parse_nclt_ms25_line("1326036000000000,0.1,0.2,0.3,1.0,2.0", e));
 }
 
-TEST(NcltGps, SkipsUnusableFixWithoutFailing) {
+TEST(NcltGps, ThreeDimensionalEventNeedsFixModeThree) {
+  // Tablo 7: 2 = enlem/boylam iyi, 3 = YUKSEKLIK DE iyi. Faz 1 GnssPosition
+  // uc boyutlu oldugu icin esik 3'tur. Mod 2, buyuk bir dusey sigma ile
+  // 3D'ye ZORLANMAZ ve iki boyutlu bir olcum modeli de eklenmez.
   const EnuProjector izdusum(Llh{0.738168521, -1.461022891, 270.0});
   DatasetEvent e;
   bool gecerli = true;
@@ -342,11 +385,29 @@ TEST(NcltGps, SkipsUnusableFixWithoutFailing) {
                                   gecerli));
   EXPECT_FALSE(gecerli) << "fix modu 1 kullanilabilir sayildi";
 
+  gecerli = true;
+  ASSERT_TRUE(parse_nclt_gps_line("1326036001200000,2,7,0.738168696,-1.461022891,0.0,0,1.4",
+                                  izdusum, 3.0, Vec3::Zero(), e, gecerli));
+  EXPECT_FALSE(gecerli) << "fix modu 2 (yukseklik GECERSIZ) 3D olcume cevrildi";
+
   ASSERT_TRUE(parse_nclt_gps_line("1326036000000000,3,9,0.738168521,-1.461022891,270.0,0,1.4",
                                   izdusum, 3.0, Vec3::Zero(), e, gecerli));
-  EXPECT_TRUE(gecerli);
+  EXPECT_TRUE(gecerli) << "fix modu 3 reddedildi";
   EXPECT_LT(e.position_w.norm(), 1e-9) << "orijin fix'i [0,0,0] vermeli";
   EXPECT_NEAR(e.position_cov_w(1, 1), 9.0, 1e-12);
+}
+
+TEST(NcltLoader, OriginIsTakenFromFirstFullThreeDimensionalFix) {
+  // Fixture'in ilk kaydi mod 3. Yukseklikleri gecersiz olan kayitlar orijin
+  // olamaz; olsalardi tum yorungeye sabit bir dusey sapma girerdi.
+  NcltConfig cfg;
+  cfg.gps_csv = fixture("nclt_sentetik/gps_rtk.csv");
+  std::vector<DatasetEvent> olaylar;
+  ASSERT_TRUE(kerteriz_bringup::load_nclt(cfg, olaylar).ok);
+
+  ASSERT_FALSE(olaylar.empty());
+  EXPECT_LT(olaylar.front().position_w.norm(), 1e-9)
+      << "ilk 3D fix orijin olmali: " << olaylar.front().position_w.transpose();
 }
 
 TEST(NcltGps, LatLonAreRadiansNotDegrees) {
@@ -373,7 +434,8 @@ TEST(NcltLoader, LoadsFixtureAndOrdersEvents) {
   ASSERT_TRUE(d.ok) << d.message;
 
   EXPECT_EQ(say(olaylar, DatasetEventKind::kImu), 3);
-  EXPECT_EQ(say(olaylar, DatasetEventKind::kGnssPosition), 3) << "fix modu 1 olan satir atlanmali";
+  EXPECT_EQ(say(olaylar, DatasetEventKind::kGnssPosition), 3)
+      << "fix modu 1 ve 2 olan satirlar atlanmali (3D icin mod 3 gerekir)";
   EXPECT_EQ(say(olaylar, DatasetEventKind::kWheelVelocity), 0) << "teker kanali Faz 1'de ERTELENDI";
   EXPECT_EQ(say(olaylar, DatasetEventKind::kReferencePose), 0) << "yer gercegi ERTELENDI";
 
