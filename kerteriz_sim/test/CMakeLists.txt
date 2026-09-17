@@ -24,3 +24,8 @@ add_test(NAME test_eskf_smoke COMMAND test_eskf_smoke)
 add_executable(test_monte_carlo test_monte_carlo.cpp)
 target_link_libraries(test_monte_carlo PRIVATE kerteriz::sim GTest::gtest_main)
 add_test(NAME test_monte_carlo COMMAND test_monte_carlo)
+
+# F2.2 — NEES/NIS istatistik motoru ve chi-kare bantlari. CIZIM YAPMAZ.
+add_executable(test_consistency test_consistency.cpp)
+target_link_libraries(test_consistency PRIVATE kerteriz::sim GTest::gtest_main)
+add_test(NAME test_consistency COMMAND test_consistency)
