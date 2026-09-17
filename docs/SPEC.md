@@ -162,11 +162,49 @@ Her faz sonunda repo **tamamlanmış görünür**. Yarım kalan faz yoktur.
 | Faz | Hafta | İçerik | Tamamlandı sayılır |
 |---|---|---|---|
 | **0** Temel | 1–2 | İskelet, CMake, Docker, CI matrisi, manif, sayısal Jacobian aracı, **minimal deterministik yörünge/sensör üreteci**, 5 otomatik denetim | Build + CI yeşil; SE₂(3) testleri geçiyor; kapalı formlu lineer-Gauss testi geçiyor; üreteç tohumlu ve tekrarlanabilir; ADR-1,2 yazılı |
-| **1** ESKF | 3–5 | IMU yayılımı, GNSS, teker hızı, NHC, ZUPT, ölçüm tamponu → **sentetik smoke test** → sonra KITTI+NCLT adaptörü | Sentetik veride ESKF yakınsıyor ve NIS makul (**gerçek veriye geçiş ön koşulu**); KITTI'de `robot_localization` ile denk ATE; tüm Jacobian testleri geçiyor; **repo paylaşılabilir (MVP)** |
+| **1** ESKF | 3–5 | IMU yayılımı, GNSS, teker hızı, NHC, ZUPT, ölçüm tamponu → **sentetik smoke test** → sonra KITTI+NCLT adaptörü | Sentetik veride ESKF yakınsıyor ve NIS makul (**gerçek veriye geçiş ön koşulu**); KITTI'de `robot_localization` ile **tekrarlanabilir ATE karşılaştırması kurulmuş ve ham sonuçlar raporlanmış** (bkz. §9.1); tüm Jacobian testleri geçiyor; **repo paylaşılabilir (MVP)** |
 | **2** Kanıt | 6–8 | Üretecin Monte Carlo'ya genişletilmesi, NEES/NIS analizi, evo, otomatik rapor | E1 grafiği üretiliyor; `make results` her şeyi sıfırdan üretiyor; filtrenin iyimser olduğu bir senaryo dürüstçe raporlanmış |
 | **3** InEKF + odometri | 9–12 | InEKF backend, karşılaştırma, gözlemlenebilirlik; son hafta: göreli poz + stochastic cloning + çevrimiçi teker kalibrasyonu | İki backend aynı arayüzde; E1'de NEES farkı görünüyor; E7 yakınsıyor; blog yazısı yayında |
 | **4** Bütünlük | 13–15 | χ² kapılama, FDI, protection level, arıza enjeksiyonu | E5 ROC eğrisi; E6 Stanford diyagramında HMI bölgesi boş; `ProtectionLevel` rviz'de |
 | **5** Yayın | 16–17 | Doxygen, README, demo videosu, teknik rapor, v1.0.0 | README ilk ekranda sonuç tablosu; video yayında; release çekilmiş |
+
+### 9.1 Faz 1 kapanış kararı — ATE ölçütü
+
+Faz 1'in özgün ölçütü *"KITTI'de `robot_localization` ile **denk** ATE"* idi. Kapanışta bu
+ölçüt **sağlanmadı** ve tablo satırı bu yüzden açıkça değiştirildi. Karar sessiz değildir;
+gerekçesi ve ölçülen fark burada durur.
+
+**Ölçülen (Faz 1 kapanış anı, `2011_09_26_drive_0013_sync`, 144 kare, 14.81 s).**
+Aynı referans, aynı ATE aracı, 20 ms damga toleransı, **hizalama yok**:
+
+| koşu | ATE RMSE | maks | eşleşen |
+|---|---|---|---|
+| Kerteriz — konum + hız | 0.329732 m | 0.490325 m | 143 |
+| Kerteriz — yalnız konum | 0.120213 m | 0.257459 m | 143 |
+| `robot_localization` (harici) | 0.029949 m | 0.084202 m | 143 |
+
+Eşdeğer bilgi kümesi çifti yalnız-konum satırıdır (gerekçe: `robot_localization` arayüzü
+GNSS hızını dünya çerçevesinde alamıyor). **Oran 4.01.** Performans denkliği elde
+edilmemiştir.
+
+**Neden ölçüt değiştirildi.** Faz 1'in amacı gerçek veride uçtan uca entegrasyon ve
+*tekrarlanabilir* bir taban çizgisi karşılaştırması kurmaktı; o sağlandı. Performans
+denkliği ise tek bir 14.81 s'lik sürüşten iki yönde de çıkarılamaz — bu projenin kendi
+doğruluk deneyi zaten §8 E2'dir (3 kestirimci × 6 dizi) ve **Faz 2**'ye aittir. Ayar,
+daha fazla dizi ve daha güçlü değerlendirme (evo, NEES) Faz 2'ye devredilmiştir.
+
+**Tekrarlanabilirlik — iki taraf aynı değil.** Kerteriz koşucusu çevrimdışı ve
+**bit-bit tekrarlanabilirdir**: aynı veri seti aynı sayıyı verir. Harici taban çizgisi ise
+canlı bir ROS ardışık düzeninden geçer (`/clock`, zamanlayıcı, mesaj teslimi), dolayısıyla
+**bit-bit tekrarlanabilir değildir**; aynı girdiyle koşudan koşuya küçük fark görülür —
+ölçülen yayılım RMSE'de `0.029949 → 0.031462 m`, maksimumda `0.084202 → 0.113537 m`.
+Yukarıdaki tablo Faz 1 kapanış anındaki tek bir koşudur; taban çizgisi satırı bu yayılımla
+birlikte okunmalıdır.
+
+**Bu sayılar bağımsız bilimsel doğrulama değildir.** KITTI'de referans poz ile filtreye
+verilen GNSS aynı OXTS çözümünden gelir; iki filtre de bu dizi için ayarlanmamıştır.
+
+---
 
 ### Geri kalınırsa kısma sırası
 
