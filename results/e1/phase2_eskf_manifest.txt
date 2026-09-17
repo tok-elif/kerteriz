@@ -1,0 +1,104 @@
+# E1 — Faz 2 ESKF tutarlilik deneyi
+# URETILMIS DOSYA. Sonuc gorulduKTEN SONRA parametre degistirilmez.
+#
+# KAPSAM: SPEC §8'deki nihai E1 IKI BACKEND kiyasidir. Bugun yalnizca
+# ESKF vardir; bu dosya FAZ 2 ESKF TABAN CIZGISIDIR. InEKF Faz 3'te
+# AYNI sozlesmeden gecirilecektir.
+
+estimator = ESKF
+runs = 500
+master_seed = 20260916
+git_commit = ab4107a86fdaf71fa957582a98a0d3e84aeb309b
+
+[senaryo]
+trajectory = figure_eight
+trajectory_radius_m = 10
+trajectory_angular_rate_rad_s = 0.20000000000000001
+trajectory_height_m = 1
+duration_s = 30
+imu_period_ns = 10000000
+imu_rate_hz = 100
+gnss_rate_hz = 5
+state_sample_stride = 20
+
+[simulasyon gurultusu]
+sim_gyro_noise_density = 0.001
+sim_accel_noise_density = 0.02
+sim_gyro_bias_walk = 1.0000000000000001e-05
+sim_accel_bias_walk = 0.00029999999999999997
+sim_initial_gyro_bias = 0 0 0
+sim_initial_accel_bias = 0 0 0
+gnss_position_noise_std_m = 0.5
+gnss_lever_arm_b = 0 0 0
+
+[filtrenin varsaydigi gurultu]
+filter_gyro_noise_density = 0.001
+filter_gyro_random_walk = 1.0000000000000001e-05
+filter_accel_noise_density = 0.02
+filter_accel_random_walk = 0.00029999999999999997
+gate_chi2_confidence = 0.997
+consistency_confidence = 0.94999999999999996
+
+[baslangic belirsizligi]
+initial_error_policy = GaussianFromP0
+initial_error_mean = zero
+yaw_sigma_rad = 0.52359877559829893
+yaw_sigma_deg = 30.000000000000004
+roll_pitch_sigma_rad = 0.10000000000000001
+P0_diag[0] dtheta_x = 0.01
+P0_diag[1] dtheta_y = 0.01
+P0_diag[2] dtheta_z(yaw) = 0.27415567780803779
+P0_diag[3] dv_x = 0.25
+P0_diag[4] dv_y = 0.25
+P0_diag[5] dv_z = 0.25
+P0_diag[6] dp_x = 9
+P0_diag[7] dp_y = 9
+P0_diag[8] dp_z = 9
+P0_diag[9] dbg_x = 0.0001
+P0_diag[10] dbg_y = 0.0001
+P0_diag[11] dbg_z = 0.0001
+P0_diag[12] dba_x = 0.01
+P0_diag[13] dba_y = 0.01
+P0_diag[14] dba_z = 0.01
+
+[baslangic toplulugu denetimi]
+ensemble_count = 500
+empirical_mean_norm = 0.075728374039684521
+empirical_yaw_std_rad = 0.5005685034515831
+aq0_mean = 14.602413671432247  # beklenen merkez 15
+aq0_band_95 = [14.523708603397001, 15.483868474848576]
+emp_cov_diag[0] dtheta_x = 0.0099254424214537118  (P0 0.01)
+emp_cov_diag[1] dtheta_y = 0.0099688349034173351  (P0 0.01)
+emp_cov_diag[2] dtheta_z(yaw) = 0.25056882664775754  (P0 0.27415567780803779)
+emp_cov_diag[3] dv_x = 0.23857517700435094  (P0 0.25)
+emp_cov_diag[4] dv_y = 0.23617044406472312  (P0 0.25)
+emp_cov_diag[5] dv_z = 0.24217818031377492  (P0 0.25)
+emp_cov_diag[6] dp_x = 9.3194345041521682  (P0 9)
+emp_cov_diag[7] dp_y = 8.386501697360746  (P0 9)
+emp_cov_diag[8] dp_z = 9.077352268213204  (P0 9)
+emp_cov_diag[9] dbg_x = 8.9733147723716007e-05  (P0 0.0001)
+emp_cov_diag[10] dbg_y = 9.609737512513519e-05  (P0 0.0001)
+emp_cov_diag[11] dbg_z = 0.00010453235038342388  (P0 0.0001)
+emp_cov_diag[12] dba_x = 0.010881896615657326  (P0 0.01)
+emp_cov_diag[13] dba_y = 0.010033194289710851  (P0 0.01)
+emp_cov_diag[14] dba_z = 0.0085507196043864125  (P0 0.01)
+
+[sonuc sayilari]
+runtime_s = 5.9299021850000004
+failed_runs = 0
+gnss_updates_total = 75000
+gnss_accepted = 74362
+gnss_chi_square_rejected = 638
+numerical_failures = 0
+runs_with_numerical_failure = 0
+nees_timestamps = 150
+nees_invalid_total = 0
+nis_timestamps = 150
+nis_undefined_total = 0
+
+[komutlar]
+# depo kokunden, goreli yollarla
+cmake -S kerteriz_sim -B build/sim -DCMAKE_BUILD_TYPE=Release
+cmake --build build/sim -j
+./build/sim/kerteriz_e1_eskf --output-dir results/e1 --git-commit <sha>
+python3 -m kerteriz_eval.e1_plot --input-dir results/e1
