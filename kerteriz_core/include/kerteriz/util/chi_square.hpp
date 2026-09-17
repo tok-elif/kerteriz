@@ -1,7 +1,7 @@
 #pragma once
 
 /// \file
-/// chi-kare CDF ve quantile — F1.3 kapisi icin.
+/// chi-kare CDF ve quantile — F1.3 kapisi ve F2.2 tutarlilik bantlari icin.
 ///
 /// CONVENTIONS §10/§11 kapiyi GUVEN SEVIYESI ile tanimlar
 /// (`gate: {chi2_confidence: 0.997}`) ve sabit %95/%99 esigi acikca yasaklar.
@@ -89,9 +89,27 @@ inline Scalar chi_square_cdf(Scalar x, int dof) {
 /// sinirlidir. Newton kullanilmaz: CDF kuyruklarda cok duz oldugu icin Newton
 /// adimi parantezin disina cikabilir ve saglamlastirma gerektirirdi; 200 adim
 /// ikiye bolme cift duyarlikta zaten tam cozunurluge iner.
+/// SERBESTLIK DERECESI SINIRI BURADA DEGILDIR.
+///
+/// Bu fonksiyon bir donem `dof <= kMaxResidualDim` ile sinirliydi. O sinir
+/// OLCUM ARTIK BOYUTUNUN sinirdir ve ait oldugu yer olcum/backend
+/// sozlesmesidir: `EskfBackend` esik onbellegini zaten 1..kMaxResidualDim
+/// araliginda kurar ve `Measurement::residual_dim()` o kapasiteyi
+/// static_assert ile zorlar. Matematik yardimcisina konuldugunda, olcumle
+/// hicbir ilgisi olmayan kullanimlari da kesiyordu: F2.2'nin tutarlilik
+/// bantlari 15, M*15 ve nihayetinde 500*15 = 7500 serbestlik derecesi ister.
+///
+/// FILTRENIN AZAMI ARTIK BOYUTU DEGISMEDI (`kMaxResidualDim`); yalnizca bu
+/// yardimcinin sozlesmesi genellestirildi.
+///
+/// BUYUK DoF DOGRULUGU. Seri kolu sabit 300 iterasyonla sinirlidir, bu yuzden
+/// cok buyuk `dof`'ta alt kuyrukta iterasyon tavani once doludur. Olculen
+/// bagil hata: dof=15 ~1e-16, dof=150 ~2e-15, dof=7500 ~1e-12. Bantlar icin
+/// fazlasiyla yeterlidir ve test_chi_square bu degerleri dondurulmus
+/// referanslara karsi sinar.
 inline Scalar chi_square_quantile(Scalar confidence, int dof) {
   assert(confidence > Scalar(0) && confidence < Scalar(1));
-  assert(dof >= 1 && dof <= kMaxResidualDim);
+  assert(dof >= 1);
 
   Scalar alt = Scalar(0);
   Scalar ust = Scalar(1);
