@@ -117,10 +117,10 @@ SeriesSummary ozetle(const std::vector<Nokta>& p, Deger deger) {
       seri = 0;
     }
   }
-  std::sort(v.begin(), v.end());
-  s.min_v = v.front();
-  s.max_v = v.back();
-  s.median_v = v[v.size() / 2];
+  const auto sinirlar = std::minmax_element(v.begin(), v.end());
+  s.min_v = *sinirlar.first;
+  s.max_v = *sinirlar.second;
+  s.median_v = kerteriz_sim::median(v); // cift N'de orta IKI degerin ortalamasi
   return s;
 }
 

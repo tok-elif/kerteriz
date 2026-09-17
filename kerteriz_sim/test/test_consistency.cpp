@@ -12,6 +12,7 @@
 
 #include <cmath>
 #include <gtest/gtest.h>
+#include <vector>
 
 namespace {
 
@@ -234,6 +235,39 @@ TEST(ChiSquareLargeDof, IsMonotonicInConfidenceAndDof) {
   EXPECT_LT(kerteriz::chi_square_quantile(0.975, 15), kerteriz::chi_square_quantile(0.975, 150));
   EXPECT_LT(kerteriz::chi_square_quantile(0.975, 1500), kerteriz::chi_square_quantile(0.975, 7500));
 }
+
+// -----------------------------------------------------------------------------
+// Betimleyici medyan
+// -----------------------------------------------------------------------------
+
+TEST(DescriptiveMedian, OddCountTakesTheMiddleElement) {
+  EXPECT_NEAR(kerteriz_sim::median({5.0}), 5.0, 1e-15);
+  EXPECT_NEAR(kerteriz_sim::median({3.0, 1.0, 2.0}), 2.0, 1e-15);
+  EXPECT_NEAR(kerteriz_sim::median({9.0, 1.0, 7.0, 3.0, 5.0}), 5.0, 1e-15);
+}
+
+TEST(DescriptiveMedian, EvenCountAveragesTheTwoMiddleElements) {
+  // `v[n/2]` tek basina UST-ORTA ogeyi verir ve medyani yukari kaydirir.
+  // E1 serisi 150 damgadir, yani tam olarak bu durum.
+  EXPECT_NEAR(kerteriz_sim::median({1.0, 2.0}), 1.5, 1e-15);
+  EXPECT_NEAR(kerteriz_sim::median({4.0, 1.0, 3.0, 2.0}), 2.5, 1e-15);
+  EXPECT_NEAR(kerteriz_sim::median({10.0, 20.0, 30.0, 41.0, 50.0, 60.0}), 35.5, 1e-15);
+
+  // Ust-orta oge ile AYNI OLMADIGI acikca gosterilir: aksi halde test hatali
+  // uygulamayi da gecirirdi.
+  const std::vector<Scalar> v = {1.0, 2.0, 3.0, 100.0};
+  EXPECT_NEAR(kerteriz_sim::median(v), 2.5, 1e-15);
+  EXPECT_NE(kerteriz_sim::median(v), v[v.size() / 2]);
+}
+
+TEST(DescriptiveMedian, DoesNotMutateTheCallersVector) {
+  const std::vector<Scalar> girdi = {9.0, 1.0, 5.0, 3.0};
+  std::vector<Scalar> kopya = girdi;
+  EXPECT_NEAR(kerteriz_sim::median(kopya), 4.0, 1e-15);
+  EXPECT_EQ(kopya, girdi) << "cagiranin dizisi siralanmis";
+}
+
+TEST(DescriptiveMedian, EmptySeriesIsZero) { EXPECT_EQ(kerteriz_sim::median({}), 0.0); }
 
 // -----------------------------------------------------------------------------
 // E. ANEES bandi
