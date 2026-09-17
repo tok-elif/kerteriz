@@ -25,6 +25,11 @@ add_executable(test_monte_carlo test_monte_carlo.cpp)
 target_link_libraries(test_monte_carlo PRIVATE kerteriz::sim GTest::gtest_main)
 add_test(NAME test_monte_carlo COMMAND test_monte_carlo)
 
+# F2.3 — baslangic hatasi ornekleme makinesi ve dondurulmus E1 senaryosu.
+add_executable(test_initial_sampling test_initial_sampling.cpp)
+target_link_libraries(test_initial_sampling PRIVATE kerteriz::sim GTest::gtest_main)
+add_test(NAME test_initial_sampling COMMAND test_initial_sampling)
+
 # F2.2 — NEES/NIS istatistik motoru ve chi-kare bantlari. CIZIM YAPMAZ.
 add_executable(test_consistency test_consistency.cpp)
 target_link_libraries(test_consistency PRIVATE kerteriz::sim GTest::gtest_main)

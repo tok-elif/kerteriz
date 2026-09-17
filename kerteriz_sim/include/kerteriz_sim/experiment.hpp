@@ -34,11 +34,13 @@
 #include "kerteriz_sim/rng.hpp"
 #include "kerteriz_sim/trajectory.hpp"
 
+#include <Eigen/Cholesky>
 #include <Eigen/Geometry>
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <vector>
 
 namespace kerteriz_sim {
@@ -76,7 +78,18 @@ struct ScenarioConfig {
   Scalar gnss_position_noise_std = Scalar(0.5);
   Vec3 gnss_lever_arm_b = Vec3::Zero();
 
-  StateVec initial_error = StateVec::Zero(); ///< NavState::plus ile uygulanir
+  /// Baslangic hatasi politikasi.
+  ///
+  /// `kFixed`      : `initial_error` her realizasyonda AYNI. F1.5 duman
+  ///                 senaryosunun davranisi budur ve VARSAYILANDIR.
+  /// `kGaussianFromP0`: her realizasyon icin delta0 ~ N(0, P0_core) ornekle.
+  ///                 Topluluk tabanli NEES yorumunun gerektirdigi budur —
+  ///                 sabit bir sapma ile 500 kosu ayni onyargiyi tasir ve
+  ///                 ANEES gercek kovaryans dogrulugunu olcmez.
+  enum class InitialErrorPolicy { kFixed, kGaussianFromP0 };
+
+  InitialErrorPolicy initial_error_policy = InitialErrorPolicy::kFixed;
+  StateVec initial_error = StateVec::Zero(); ///< yalnizca kFixed; plus ile uygulanir
   NavCovariance initial_covariance = NavCovariance::Zero();
   Scalar chi2_confidence = Scalar(0.997);
 
@@ -169,9 +182,18 @@ inline ScenarioConfig noiseless_scenario() {
 
 /// IMU ve GNSS akislari AYRI tohumludur: GNSS ornek sayisi degisse bile IMU
 /// gurultu dizisi degismez.
+/// ALAN SIRASI SOZLESMEDIR. `initial_state` SONA eklenmistir: mevcut
+/// `RunSeeds{imu, gnss}` bicimindeki toplu ilk-degerler anlamini korusun diye.
+/// Basa eklendiginde bu tur her cagri sessizce kayar — nitekim ilk denemede
+/// oyle oldu ve F1.5'in bit-birebir korumasi yakaladi. Yeni cagrilarda yine de
+/// alan alan atama tercih edilmelidir.
 struct RunSeeds {
   std::uint64_t imu = 0;
   std::uint64_t gnss = 0;
+  /// Baslangic durumu hatasi. IMU/GNSS akislarindan BAGIMSIZDIR: baslangic
+  /// ornekleme politikasini degistirmek olcum gurultu dizilerini KAYDIRMAMALI,
+  /// yoksa iki degisiklik birbirine karisir ve kiyas anlamini yitirir.
+  std::uint64_t initial_state = 0;
 };
 
 /// Tek bir andaki gercek/kestirim cifti. HATA BURADA HESAPLANMAZ — F2.2 onu
@@ -209,6 +231,13 @@ struct RunResult {
   int run_index = 0;
   RunSeeds seeds;
   RunCounters counters;
+
+  /// Bu realizasyonda GERCEKTEN uygulanan baslangic hatasi. Uretim deneyi
+  /// toplulugu boylece denetlenebilir: ornekleyici P0'i dogru temsil ediyor mu
+  /// sorusu, filtrenin sonucuna bakmadan yanitlanabilir.
+  StateVec initial_error_used = StateVec::Zero();
+  bool ok = true;              ///< ornekleme veya kosum basarili mi
+  std::string failure_message; ///< bos degilse sebep
 
   Scalar initial_position_error = 0;
   Scalar final_position_error = 0;
@@ -290,6 +319,63 @@ inline NavState truth_state(const TrajectorySample& gt, const Vec3& gyro_bias,
   return x;
 }
 
+/// P0'in aktif 15x15 blogundan sifir ortalamali bir teget ornegi.
+///
+///   P0 = L L^T,  delta0 = L z,  z ~ N(0, I_15)
+///
+/// Euler acilari AYRI ornekLENMEZ ve NavState::plus disinda bir yonelim hatasi
+/// KURULMAZ: ornek dogrudan projenin teget sirasindadir
+/// [dtheta, dv, dp, db_g, db_a] ve 15'ten sonraki kuyruk SIFIR kalir.
+///
+/// P0'in acik tersi ALINMAZ. P0 sonlu degilse, maddeten simetrik degilse veya
+/// pozitif tanimli degilse ornekleme ACIKCA BASARISIZ olur: titresim eklenmez,
+/// ozdeger kirpilmaz, sessizce simetriklestirilmez. Bu deney YAPILANDIRMASIDIR;
+/// gorunmez bicimde onarilacak bir sey degildir.
+struct InitialSample {
+  bool ok = false;
+  std::string message;
+  StateVec delta = StateVec::Zero();
+};
+
+inline InitialSample sample_initial_error(const NavCovariance& p0, SeededRng& rng,
+                                          Scalar symmetry_tolerance = Scalar(1e-9)) {
+  InitialSample out;
+  const Eigen::Matrix<Scalar, kCoreDof, kCoreDof> pc = p0.topLeftCorner<kCoreDof, kCoreDof>();
+
+  if (!pc.allFinite()) {
+    out.message = "P0 sonlu degil";
+    return out;
+  }
+  const Scalar olcek = std::max(Scalar(1), pc.cwiseAbs().maxCoeff());
+  if ((pc - pc.transpose()).cwiseAbs().maxCoeff() > symmetry_tolerance * olcek) {
+    out.message = "P0 maddeten simetrik degil";
+    return out;
+  }
+  const Eigen::LLT<Eigen::Matrix<Scalar, kCoreDof, kCoreDof>> llt(pc);
+  if (llt.info() != Eigen::Success) {
+    out.message = "P0 pozitif tanimli degil";
+    return out;
+  }
+  const auto l = llt.matrixL();
+  // Kosegenin KESIN pozitifligi ayrica zorlanir: LLT tekil bir matriste de
+  // Success dondurebilir ve sifir pivot sessizce gecerdi.
+  for (int i = 0; i < kCoreDof; ++i) {
+    if (!(l(i, i) > Scalar(0))) {
+      out.message = "P0 pozitif tanimli degil (sifir pivot)";
+      return out;
+    }
+  }
+
+  Eigen::Matrix<Scalar, kCoreDof, 1> z;
+  for (int i = 0; i < kCoreDof; ++i) {
+    z[i] = rng.gaussian();
+  }
+  out.delta.setZero(); // 15'ten sonraki kuyruk SIFIR
+  out.delta.head<kCoreDof>() = l * z;
+  out.ok = true;
+  return out;
+}
+
 /// Tek realizasyon. Sentezleyici -> GERCEK backend -> kayit.
 inline RunResult run_single(const ScenarioConfig& cfg, const RunSeeds& seeds, int run_index = 0) {
   assert(cfg.imu_period_ns > 0 && "IMU periyodu pozitif olmali");
@@ -310,11 +396,27 @@ inline RunResult run_single(const ScenarioConfig& cfg, const RunSeeds& seeds, in
   const TrajectorySample gt0 = yorunge.at(0);
   const NavState gercek0 =
       truth_state(gt0, cfg.imu_sim.initial_gyro_bias, cfg.imu_sim.initial_accel_bias);
-  const NavState kestirim0 = gercek0.plus(cfg.initial_error);
 
   RunResult r;
   r.run_index = run_index;
   r.seeds = seeds;
+
+  StateVec baslangic_hatasi = cfg.initial_error;
+  if (cfg.initial_error_policy == ScenarioConfig::InitialErrorPolicy::kGaussianFromP0) {
+    // UCUNCU, BAGIMSIZ akis. kFixed bu akisi HIC TUKETMEZ, bu yuzden F1.5'in
+    // acik IMU/GNSS tohumlari birebir ayni ciktiyi vermeye devam eder.
+    SeededRng baslangic_rng(seeds.initial_state);
+    const InitialSample ornek = sample_initial_error(cfg.initial_covariance, baslangic_rng);
+    if (!ornek.ok) {
+      r.ok = false;
+      r.failure_message = ornek.message;
+      return r;
+    }
+    baslangic_hatasi = ornek.delta;
+  }
+  r.initial_error_used = baslangic_hatasi;
+
+  const NavState kestirim0 = gercek0.plus(baslangic_hatasi);
   r.initial_position_error = (kestirim0.extended_pose().translation() - gt0.position).norm();
   r.initial_velocity_error = (kestirim0.extended_pose().linearVelocity() - gt0.velocity).norm();
 
