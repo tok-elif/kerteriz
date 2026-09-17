@@ -6,8 +6,11 @@
 ///   TrajectoryGenerator -> ImuSynthesizer -> EskfBackend::predict
 ///                       -> GnssSynthesizer -> GnssPosition -> EskfBackend::update
 ///
-/// Yeni filtre matematigi YOKTUR; ImuPropagator, EskfBackend ve GnssPosition
-/// uretim kodu bypass EDILMEZ.
+/// F2.1'DEN SONRA: senaryo ve dongu artik BU DOSYADA DEGIL,
+/// `kerteriz_sim/experiment.hpp` icindedir. Test o tekrar kullanilabilir
+/// kosucuyu cagirir; Monte Carlo katmani da AYNISINI cagirir. Ikinci bir
+/// filtre dongusu yoktur — iki kod yolunun zamanla ayrismasi boylece mumkun
+/// degildir. Senaryo sayilari ve tohumlar DEGISMEDI.
 ///
 /// UC KAYNAK BIRBIRINDEN BAGIMSIZDIR:
 ///   gercek      = analitik TrajectoryGenerator
@@ -19,275 +22,52 @@
 /// istatistiksel kapsama iddiasi cikarilmaz; NIS yalnizca teshis olarak
 /// toplanir ve genis akil-sagligi sinirlariyla kontrol edilir.
 
-#include "kerteriz/backends/eskf_backend.hpp"
-#include "kerteriz/measurements/gnss_position.hpp"
-#include "kerteriz_sim/gnss.hpp"
-#include "kerteriz_sim/imu.hpp"
-#include "kerteriz_sim/rng.hpp"
-#include "kerteriz_sim/trajectory.hpp"
+#include "kerteriz_sim/experiment.hpp"
 
-#include <Eigen/Geometry>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <gtest/gtest.h>
-#include <limits>
 
 namespace {
 
-using kerteriz::EskfBackend;
-using kerteriz::EskfConfig;
-using kerteriz::GnssPosition;
-using kerteriz::ImuNoiseParams;
-using kerteriz::kCoreDof;
 using kerteriz::NavCovariance;
 using kerteriz::NavState;
 using kerteriz::Scalar;
-using kerteriz::SE23;
-using kerteriz::StateVec;
 using kerteriz::TimeNs;
 using kerteriz::UpdateStatus;
 using kerteriz::Vec3;
-using kerteriz_sim::GnssParams;
-using kerteriz_sim::GnssSynthesizer;
-using kerteriz_sim::ImuParams;
-using kerteriz_sim::ImuSynthesizer;
-using kerteriz_sim::SeededRng;
-using kerteriz_sim::TrajectoryGenerator;
-using kerteriz_sim::TrajectoryKind;
-using kerteriz_sim::TrajectoryParams;
-using kerteriz_sim::TrajectorySample;
+using kerteriz_sim::kNanosecondsPerSecond;
+using kerteriz_sim::RunResult;
+using kerteriz_sim::RunSeeds;
+using kerteriz_sim::ScenarioConfig;
 
-// -----------------------------------------------------------------------------
-// Senaryo
-// -----------------------------------------------------------------------------
-
-constexpr TimeNs kSaniye = 1000000000LL;
-constexpr TimeNs kImuPeriyodu = kSaniye / 100; ///< 100 Hz
-constexpr Scalar kGnssHizi = 5.0;              ///< Hz
-constexpr Scalar kSure = 30.0;                 ///< s
-constexpr Scalar kGuven = 0.997;
-
+// F1.5'in tohumlari — DEGISMEDI.
 constexpr std::uint64_t kImuTohumu = 20260915U;
 constexpr std::uint64_t kGnssTohumu = 777001U;
 
-struct SmokeConfig {
-  ImuParams imu_sim;         ///< sentezleyici gurultusu
-  ImuNoiseParams imu_filtre; ///< filtrenin varsaydigi gurultu
-  Scalar gnss_std = 0.5;     ///< m, eksen basina
-  Vec3 gnss_lever = Vec3::Zero();
-  std::uint64_t imu_tohumu = kImuTohumu;
-  std::uint64_t gnss_tohumu = kGnssTohumu;
-};
+RunSeeds tohumlar(std::uint64_t gnss = kGnssTohumu) { return RunSeeds{kImuTohumu, gnss}; }
 
-struct SmokeSummary {
-  Scalar initial_position_error = 0;
-  Scalar final_position_error = 0;
-  Scalar initial_velocity_error = 0;
-  Scalar final_velocity_error = 0;
-  int gnss_total = 0;
-  int accepted = 0;
-  int rejected = 0;
-  int numerical_failures = 0;
-  Scalar nis_sum = 0;
-  Scalar nis_min = std::numeric_limits<Scalar>::infinity();
-  Scalar nis_max = -std::numeric_limits<Scalar>::infinity();
-  TimeNs final_stamp_ns = 0;
-  NavState final_state;
-  NavCovariance final_covariance = NavCovariance::Zero();
-
-  Scalar nis_mean() const {
-    const int n = accepted + rejected;
-    return n > 0 ? nis_sum / static_cast<Scalar>(n) : Scalar(0);
-  }
-};
-
-/// Sonucu ozete isler. AYRI bir fonksiyondur ki sayim mantigi dogrudan
-/// sinanabilsin: gercek zincirde GnssPosition ile S = J P J^T + R her zaman
-/// pozitif tanimlidir, yani sayisal basarisizlik DOGAL OLARAK tetiklenemez.
-/// Yanlis siniflandirma ancak bu fonksiyon tek basina sinanarak yakalanabilir.
-void say(SmokeSummary& s, const kerteriz::UpdateResult& sonuc) {
-  ++s.gnss_total;
-  switch (sonuc.status) {
-  case UpdateStatus::kAccepted:
-    ++s.accepted;
-    break;
-  case UpdateStatus::kChiSquareRejected:
-    ++s.rejected;
-    break;
-  case UpdateStatus::kNumericalFailure:
-    ++s.numerical_failures;
-    break;
-  }
-  if (sonuc.nis.has_value()) {
-    s.nis_sum += *sonuc.nis;
-    s.nis_min = std::min(s.nis_min, *sonuc.nis);
-    s.nis_max = std::max(s.nis_max, *sonuc.nis);
-  }
-}
-
-TrajectoryGenerator sekiz() {
-  TrajectoryParams p;
-  p.kind = TrajectoryKind::kFigureEight;
-  p.radius = 10.0;
-  p.angular_rate = 0.2;
-  p.height = 1.0;
-  return TrajectoryGenerator(p);
-}
-
-/// Filtrenin varsaydigi IMU gurultusu. Sentezleyici ile AYNI fiziksel modeli
-/// temsil eder; gurultusuz senaryoda sentezleyici sifir gurultu uretir ama
-/// filtre yine bu degerleri kullanir — yayilim birinci mertebe oldugu icin
-/// sifir surec gurultusu kovaryansi gercekci olmayan bicimde cokertirdi.
-ImuNoiseParams filtre_gurultusu() {
-  ImuNoiseParams n;
-  n.gyro_noise_density = 1.0e-3;  // rad/s/sqrt(Hz)
-  n.gyro_random_walk = 1.0e-5;    // rad/s^2/sqrt(Hz)
-  n.accel_noise_density = 2.0e-2; // m/s^2/sqrt(Hz)
-  n.accel_random_walk = 3.0e-4;   // m/s^3/sqrt(Hz)
-  return n;
-}
-
-/// Sentezleyici tarafinda AYNI model.
-ImuParams sim_gurultusu() {
-  ImuParams p;
-  p.gyro_noise_density = 1.0e-3;
-  p.accel_noise_density = 2.0e-2;
-  p.gyro_bias_walk = 1.0e-5;
-  p.accel_bias_walk = 3.0e-4;
-  return p;
-}
-
-/// Gercek durumdan NavState. SE_2_3 kurucusu (konum, kuaterniyon, hiz).
-///
-/// KUATERNIYON ACIKCA NORMALLESTIRILIR. Yorunge rotasyon MATRISI uretir; ondan
-/// turetilen kuaterniyon birim normdan ~1e-16 sapabilir ve manif bunu reddeder
-/// ("SE_2_3 assigned data not normalized !"). Bu kontrol yalnizca assert'ler
-/// acikken calisir, dolayisiyla Release build'de gorunmez.
-NavState gercek_durum(const TrajectorySample& gt) {
-  Eigen::Quaterniond q(gt.rotation);
-  q.normalize();
-  NavState x;
-  x.extended_pose() = SE23(gt.position, q, gt.velocity);
-  return x;
-}
-
-/// Kasitli baslangic hatasi. NavState::plus ile uygulanir — projenin KENDI
-/// sag perturbasyon konvansiyonu.
-StateVec baslangic_hatasi() {
-  StateVec d = StateVec::Zero();
-  d.segment<3>(0) = Vec3(0.010, -0.015, 0.050);  // dtheta, yaw agirlikli ~2.9 derece
-  d.segment<3>(3) = Vec3(0.30, -0.20, 0.10);     // dv
-  d.segment<3>(6) = Vec3(1.50, -1.00, 0.50);     // dp
-  d.segment<3>(9) = Vec3(0.002, -0.001, 0.003);  // db_g
-  d.segment<3>(12) = Vec3(0.020, 0.030, -0.010); // db_a
-  return d;
-}
-
-/// Baslangic kovaryansi gercek hatayi RAHATCA kapsar; ilk GNSS olcumunun
-/// yalnizca kotu ayar yuzunden kapiya takilmasi ISTENMEZ.
-NavCovariance baslangic_kovaryansi() {
-  NavCovariance p = NavCovariance::Zero();
-  p.block<3, 3>(0, 0).diagonal().setConstant(0.01);   // (0.1 rad)^2
-  p.block<3, 3>(3, 3).diagonal().setConstant(0.25);   // (0.5 m/s)^2
-  p.block<3, 3>(6, 6).diagonal().setConstant(9.0);    // (3 m)^2
-  p.block<3, 3>(9, 9).diagonal().setConstant(1.0e-4); // (0.01 rad/s)^2
-  p.block<3, 3>(12, 12).diagonal().setConstant(0.01); // (0.1 m/s^2)^2
-  return p;
-}
-
-// -----------------------------------------------------------------------------
-// Kosum
-// -----------------------------------------------------------------------------
-
-SmokeSummary kos(const SmokeConfig& cfg) {
-  TrajectoryGenerator yorunge = sekiz();
-
-  // AYRI RNG nesneleri ve AYRI tohumlar: GNSS ornek sayisi degisse bile IMU
-  // gurultu dizisi degismez.
-  SeededRng imu_rng(cfg.imu_tohumu);
-  SeededRng gnss_rng(cfg.gnss_tohumu);
-  ImuSynthesizer imu_sentez(cfg.imu_sim, imu_rng);
-  GnssSynthesizer gnss_sentez(GnssParams{cfg.gnss_std, kGnssHizi}, gnss_rng);
-
-  const TrajectorySample gt0 = yorunge.at(0);
-  const NavState gercek0 = gercek_durum(gt0);
-  const NavState kestirim0 = gercek0.plus(baslangic_hatasi());
-
-  SmokeSummary s;
-  s.initial_position_error = (kestirim0.extended_pose().translation() - gt0.position).norm();
-  s.initial_velocity_error = (kestirim0.extended_pose().linearVelocity() - gt0.velocity).norm();
-
-  EskfBackend backend(EskfConfig{kestirim0, baslangic_kovaryansi(), 0, cfg.imu_filtre, kGuven});
-
-  const TimeNs gnss_periyodu = gnss_sentez.period_ns();
-  const Eigen::Matrix3d gnss_kovaryansi =
-      Eigen::Matrix3d::Identity() * (cfg.gnss_std * cfg.gnss_std);
-
-  const auto adim_sayisi = static_cast<int>(kSure * kSaniye / kImuPeriyodu);
-  TimeNs onceki_ns = 0;
-
-  for (int k = 1; k <= adim_sayisi; ++k) {
-    // MUTLAK ZAMAN TAMSAYI ADIMLARDAN URETILIR; dt biriktirilmez.
-    const TimeNs t = static_cast<TimeNs>(k) * kImuPeriyodu;
-    const Scalar dt = static_cast<Scalar>(t - onceki_ns) * 1e-9;
-    const TrajectorySample gt = yorunge.at(t);
-
-    backend.predict(imu_sentez.sample(gt, dt), dt);
-    onceki_ns = t;
-
-    if (gnss_periyodu > 0 && t % gnss_periyodu == 0) {
-      const auto olcum = gnss_sentez.sample(gt);
-      const GnssPosition z(olcum.stamp_ns, "gnss_main", olcum.position, gnss_kovaryansi,
-                           cfg.gnss_lever);
-      const auto sonuc = backend.update(z);
-
-      say(s, sonuc);
-    }
-  }
-
-  const TrajectorySample gt_son = yorunge.at(onceki_ns);
-  s.final_position_error = (backend.state().extended_pose().translation() - gt_son.position).norm();
-  s.final_velocity_error =
-      (backend.state().extended_pose().linearVelocity() - gt_son.velocity).norm();
-  s.final_stamp_ns = backend.stamp_ns();
-  s.final_state = backend.state();
-  s.final_covariance = backend.covariance();
-  return s;
-}
-
-SmokeConfig gurultusuz_config() {
-  SmokeConfig c;
-  c.imu_sim = ImuParams{}; // tum gurultu ve bias yuruyusu SIFIR
-  c.imu_filtre = filtre_gurultusu();
-  c.gnss_std = 0.0;
-  return c;
-}
-
-SmokeConfig gurultulu_config() {
-  SmokeConfig c;
-  c.imu_sim = sim_gurultusu();
-  c.imu_filtre = filtre_gurultusu();
-  c.gnss_std = 0.5;
-  return c;
+RunResult kos(const ScenarioConfig& cfg, const RunSeeds& s = tohumlar()) {
+  return kerteriz_sim::run_single(cfg, s);
 }
 
 /// Teshis ciktisi. Bu test bir NEES/Monte Carlo calismasi degildir; asagidaki
 /// sayilar yalnizca kosunun ne yaptigini gorunur kilar.
-void yazdir(const char* etiket, const SmokeSummary& s) {
+void yazdir(const char* etiket, const RunResult& s) {
   std::printf("  [%s]\n", etiket);
   std::printf("    konum hatasi    %.6g m  ->  %.6g m\n", s.initial_position_error,
               s.final_position_error);
   std::printf("    hiz hatasi      %.6g m/s ->  %.6g m/s\n", s.initial_velocity_error,
               s.final_velocity_error);
-  std::printf("    GNSS toplam %d  kabul %d  red %d  sayisal basarisizlik %d\n", s.gnss_total,
-              s.accepted, s.rejected, s.numerical_failures);
+  std::printf("    GNSS toplam %d  kabul %d  red %d  sayisal basarisizlik %d\n", s.counters.total,
+              s.counters.accepted, s.counters.rejected, s.counters.numerical_failures);
   std::printf("    NIS  min %.6g  ort %.6g  maks %.6g\n", s.nis_min, s.nis_mean(), s.nis_max);
   std::printf("    son damga %lld ns\n", static_cast<long long>(s.final_stamp_ns));
 }
 
 /// Ortak saglik kontrolleri.
-void sonlu_ve_simetrik(const SmokeSummary& s) {
+void sonlu_ve_simetrik(const RunResult& s) {
   EXPECT_TRUE(s.final_state.extended_pose().translation().allFinite());
   EXPECT_TRUE(s.final_state.extended_pose().linearVelocity().allFinite());
   EXPECT_TRUE(s.final_state.extended_pose().rotation().allFinite());
@@ -302,7 +82,10 @@ void sonlu_ve_simetrik(const SmokeSummary& s) {
 }
 
 TimeNs beklenen_son_damga() {
-  return static_cast<TimeNs>(static_cast<int>(kSure * kSaniye / kImuPeriyodu)) * kImuPeriyodu;
+  const ScenarioConfig c = kerteriz_sim::noisy_scenario();
+  const auto adim = static_cast<int>(c.duration_s * static_cast<Scalar>(kNanosecondsPerSecond) /
+                                     static_cast<Scalar>(c.imu_period_ns));
+  return static_cast<TimeNs>(adim) * c.imu_period_ns;
 }
 
 // -----------------------------------------------------------------------------
@@ -310,7 +93,7 @@ TimeNs beklenen_son_damga() {
 // -----------------------------------------------------------------------------
 
 TEST(EskfSmoke, NoiselessChainConvergesTowardGroundTruth) {
-  const SmokeSummary s = kos(gurultusuz_config());
+  const RunResult s = kos(kerteriz_sim::noiseless_scenario());
   yazdir("gurultusuz", s);
 
   sonlu_ve_simetrik(s);
@@ -319,10 +102,12 @@ TEST(EskfSmoke, NoiselessChainConvergesTowardGroundTruth) {
   EXPECT_GT(s.initial_position_error, 1.0) << "baslangic kestirimi gercege cok yakin";
   EXPECT_GT(s.initial_velocity_error, 0.2);
 
-  EXPECT_EQ(s.numerical_failures, 0);
-  EXPECT_GT(s.accepted, 0) << "hic GNSS guncellemesi uygulanmadi";
-  EXPECT_EQ(s.accepted + s.rejected + s.numerical_failures, s.gnss_total);
-  EXPECT_GT(s.accepted, s.gnss_total * 9 / 10) << "kosunun anlamli kismi kabul edilmedi";
+  EXPECT_EQ(s.counters.numerical_failures, 0);
+  EXPECT_GT(s.counters.accepted, 0) << "hic GNSS guncellemesi uygulanmadi";
+  EXPECT_EQ(s.counters.accepted + s.counters.rejected + s.counters.numerical_failures,
+            s.counters.total);
+  EXPECT_GT(s.counters.accepted, s.counters.total * 9 / 10)
+      << "kosunun anlamli kismi kabul edilmedi";
 
   EXPECT_LT(s.final_position_error, s.initial_position_error);
   EXPECT_LT(s.final_velocity_error, s.initial_velocity_error);
@@ -338,22 +123,24 @@ TEST(EskfSmoke, NoiselessChainConvergesTowardGroundTruth) {
 // -----------------------------------------------------------------------------
 
 TEST(EskfSmoke, SeededNoisyChainStaysConsistentAndConverges) {
-  const SmokeSummary s = kos(gurultulu_config());
+  const RunResult s = kos(kerteriz_sim::noisy_scenario());
   yazdir("gurultulu", s);
 
   sonlu_ve_simetrik(s);
 
-  EXPECT_EQ(s.numerical_failures, 0) << "sayisal basarisizlik olmamali";
-  EXPECT_EQ(s.accepted + s.rejected, s.gnss_total) << "kabul + red toplam GNSS sayisina esit degil";
-  EXPECT_GT(s.gnss_total, 100) << "senaryo beklenen kadar GNSS uretmedi";
+  EXPECT_EQ(s.counters.numerical_failures, 0) << "sayisal basarisizlik olmamali";
+  EXPECT_EQ(s.counters.accepted + s.counters.rejected, s.counters.total)
+      << "kabul + red toplam GNSS sayisina esit degil";
+  EXPECT_GT(s.counters.total, 100) << "senaryo beklenen kadar GNSS uretmedi";
 
   // Makul kabul orani. Bu bir chi-kare kapsama IDDIASI DEGILDIR — tek
   // realizasyon, genis akil-sagligi siniri.
-  const Scalar oran = static_cast<Scalar>(s.accepted) / static_cast<Scalar>(s.gnss_total);
-  EXPECT_GT(oran, 0.85) << "kabul orani cok dusuk: kabul=" << s.accepted
-                        << " toplam=" << s.gnss_total;
+  const Scalar oran =
+      static_cast<Scalar>(s.counters.accepted) / static_cast<Scalar>(s.counters.total);
+  EXPECT_GT(oran, 0.85) << "kabul orani cok dusuk: kabul=" << s.counters.accepted
+                        << " toplam=" << s.counters.total;
 
-  ASSERT_GT(s.accepted + s.rejected, 0);
+  ASSERT_GT(s.counters.accepted + s.counters.rejected, 0);
   EXPECT_TRUE(std::isfinite(s.nis_min));
   EXPECT_TRUE(std::isfinite(s.nis_max));
   EXPECT_GE(s.nis_min, 0.0) << "NIS negatif olamaz";
@@ -371,8 +158,8 @@ TEST(EskfSmoke, SeededNoisyChainStaysConsistentAndConverges) {
 TEST(EskfSmoke, NoisyRunIsActuallyNoisy) {
   // Gurultulu senaryonun gercekten gurultu tasidigi. Sentezleyici gurultusu
   // sessizce sifirlanirsa iki kosum ayni cikardi.
-  const SmokeSummary temiz = kos(gurultusuz_config());
-  const SmokeSummary gurultulu = kos(gurultulu_config());
+  const RunResult temiz = kos(kerteriz_sim::noiseless_scenario());
+  const RunResult gurultulu = kos(kerteriz_sim::noisy_scenario());
 
   EXPECT_GT((gurultulu.final_state.extended_pose().translation() -
              temiz.final_state.extended_pose().translation())
@@ -399,23 +186,32 @@ class DejenereOlcum : public kerteriz::Measurement {
 TEST(EskfSmoke, NumericalFailureIsCountedSeparatelyFromAccepted) {
   // Sayisal basarisizligin KABUL gibi sayilmadigini dogrular. Gercek zincirde
   // bu durum uretilemedigi icin sayim mantigi burada dogrudan sinanir.
-  const TrajectorySample gt0 = sekiz().at(0);
-  const NavState kestirim0 = gercek_durum(gt0).plus(baslangic_hatasi());
-  EskfBackend backend(EskfConfig{kestirim0, NavCovariance::Zero(), 0, filtre_gurultusu(), kGuven});
+  const ScenarioConfig cfg = kerteriz_sim::noisy_scenario();
+  const auto gt0 = kerteriz_sim::TrajectoryGenerator(cfg.trajectory).at(0);
+  const NavState kestirim0 =
+      kerteriz_sim::truth_state(gt0, cfg.imu_sim.initial_gyro_bias, cfg.imu_sim.initial_accel_bias)
+          .plus(cfg.initial_error);
+  kerteriz::EskfBackend backend(kerteriz::EskfConfig{kestirim0, NavCovariance::Zero(), 0,
+                                                     cfg.imu_filter, cfg.chi2_confidence});
 
   const DejenereOlcum z;
   const auto sonuc = backend.update(z);
   ASSERT_EQ(sonuc.status, UpdateStatus::kNumericalFailure);
   ASSERT_FALSE(sonuc.nis.has_value());
 
-  SmokeSummary s;
-  say(s, sonuc);
+  RunResult s;
+  kerteriz_sim::record_update(s, 0, sonuc);
 
-  EXPECT_EQ(s.numerical_failures, 1) << "sayisal basarisizlik ayri sayilmadi";
-  EXPECT_EQ(s.accepted, 0) << "sayisal basarisizlik KABUL gibi sayildi";
-  EXPECT_EQ(s.rejected, 0);
-  EXPECT_EQ(s.gnss_total, 1);
+  EXPECT_EQ(s.counters.numerical_failures, 1) << "sayisal basarisizlik ayri sayilmadi";
+  EXPECT_EQ(s.counters.accepted, 0) << "sayisal basarisizlik KABUL gibi sayildi";
+  EXPECT_EQ(s.counters.rejected, 0);
+  EXPECT_EQ(s.counters.total, 1);
   EXPECT_EQ(s.nis_sum, 0.0) << "NIS yokken toplama katki yapildi";
+
+  // Gozlem kaydi da tutulur ve NIS'in TANIMSIZ oldugu isaretlenir (ADR-24).
+  ASSERT_EQ(s.nis_observations.size(), 1U);
+  EXPECT_FALSE(s.nis_observations[0].has_nis);
+  EXPECT_EQ(s.nis_observations[0].status, UpdateStatus::kNumericalFailure);
 }
 
 // -----------------------------------------------------------------------------
@@ -423,14 +219,14 @@ TEST(EskfSmoke, NumericalFailureIsCountedSeparatelyFromAccepted) {
 // -----------------------------------------------------------------------------
 
 TEST(EskfSmoke, SameSeedsProduceIdenticalRuns) {
-  const SmokeSummary a = kos(gurultulu_config());
-  const SmokeSummary b = kos(gurultulu_config());
+  const RunResult a = kos(kerteriz_sim::noisy_scenario());
+  const RunResult b = kos(kerteriz_sim::noisy_scenario());
 
   // Ayni binary, ayni kod yolu, ayni girdi: bit-birebir esitlik beklenir.
-  EXPECT_EQ(a.accepted, b.accepted);
-  EXPECT_EQ(a.rejected, b.rejected);
-  EXPECT_EQ(a.numerical_failures, b.numerical_failures);
-  EXPECT_EQ(a.gnss_total, b.gnss_total);
+  EXPECT_EQ(a.counters.accepted, b.counters.accepted);
+  EXPECT_EQ(a.counters.rejected, b.counters.rejected);
+  EXPECT_EQ(a.counters.numerical_failures, b.counters.numerical_failures);
+  EXPECT_EQ(a.counters.total, b.counters.total);
   EXPECT_EQ(a.nis_sum, b.nis_sum);
   EXPECT_EQ(a.nis_min, b.nis_min);
   EXPECT_EQ(a.nis_max, b.nis_max);
@@ -446,11 +242,8 @@ TEST(EskfSmoke, SameSeedsProduceIdenticalRuns) {
 TEST(EskfSmoke, DifferentSeedsProduceDifferentRuns) {
   // Determinizm testinin ANLAMLI oldugunu gosterir: tohum degisince sonuc da
   // degismeli, yoksa esitlik testi bos yere gecerdi.
-  SmokeConfig farkli = gurultulu_config();
-  farkli.gnss_tohumu = kGnssTohumu + 1;
-
-  const SmokeSummary a = kos(gurultulu_config());
-  const SmokeSummary b = kos(farkli);
+  const RunResult a = kos(kerteriz_sim::noisy_scenario());
+  const RunResult b = kos(kerteriz_sim::noisy_scenario(), tohumlar(kGnssTohumu + 1));
 
   EXPECT_NE(a.nis_sum, b.nis_sum) << "tohum degisti ama NIS toplami ayni";
   EXPECT_GT(a.final_state.minus(b.final_state).norm(), 1e-6);
