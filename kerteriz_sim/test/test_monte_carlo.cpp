@@ -188,10 +188,154 @@ TEST(MonteCarlo, RecordedSamplesAreFiniteSymmetricAndOrdered) {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Gercek durum 15 DoF'tur: bias'lar da GERCEK simule edilen degerlerdir
+// -----------------------------------------------------------------------------
+
+/// Sifirdan farkli, deterministik baslangic bias'lari.
+kerteriz::Vec3 kJiroBias(0.004, -0.002, 0.007);
+kerteriz::Vec3 kIvmeBias(-0.030, 0.050, 0.010);
+
+ScenarioConfig bias_senaryosu(bool yuruyus) {
+  ScenarioConfig c = kisa_senaryo();
+  c.imu_sim.initial_gyro_bias = kJiroBias;
+  c.imu_sim.initial_accel_bias = kIvmeBias;
+  if (!yuruyus) {
+    c.imu_sim.gyro_bias_walk = 0.0;
+    c.imu_sim.accel_bias_walk = 0.0;
+  }
+  return c;
+}
+
+TEST(MonteCarloTruth, ConstantBiasAppearsExactlyInEveryTruthSample) {
+  // Yuruyus SIFIR: gercek bias tum kosu boyunca SABIT ve yapilandirilan degere
+  // TAM esit olmalidir. Kayit bias'i sifir biraksaydi bu test duserdi.
+  MonteCarloConfig cfg = mc(1);
+  cfg.scenario = bias_senaryosu(/*yuruyus=*/false);
+  cfg.record_state_samples = true;
+
+  const MonteCarloResult r = kerteriz_sim::run_monte_carlo(cfg);
+  ASSERT_EQ(r.runs.size(), 1U);
+  ASSERT_FALSE(r.runs[0].samples.empty());
+
+  for (const auto& s : r.runs[0].samples) {
+    EXPECT_EQ((s.truth.gyro_bias() - kJiroBias).cwiseAbs().maxCoeff(), 0.0)
+        << "gercek jiro bias'i kayitta yok veya yanlis, damga " << s.stamp_ns;
+    EXPECT_EQ((s.truth.accel_bias() - kIvmeBias).cwiseAbs().maxCoeff(), 0.0)
+        << "gercek ivme bias'i kayitta yok veya yanlis, damga " << s.stamp_ns;
+  }
+}
+
+TEST(MonteCarloTruth, InitialEstimateIsTheConfiguredBiasPlusTheInitialError) {
+  // t = 0'daki GERCEK durum, sentezleyicinin BASLANGIC bias'larini tasimali;
+  // baslangic hatasi onun UZERINE uygulanir. Sifir varsayilsaydi kestirimin
+  // bias'i gercek degerden tam olarak kJiroBias kadar fazladan saparadi ve bu
+  // sapma hicbir yerde gorunmezdi.
+  //
+  // Yuruyus SIFIR ve ilk GNSS guncellemesi 0.2 s'de gelir; yayilim bias'i
+  // nominal olarak DEGISTIRMEZ. Dolayisiyla ilk ornekte hatanin bias blogu
+  // TAM OLARAK yapilandirilan baslangic hatasi olmalidir.
+  MonteCarloConfig cfg = mc(1);
+  cfg.scenario = bias_senaryosu(/*yuruyus=*/false);
+  cfg.record_state_samples = true;
+
+  const MonteCarloResult r = kerteriz_sim::run_monte_carlo(cfg);
+  ASSERT_EQ(r.runs.size(), 1U);
+  ASSERT_FALSE(r.runs[0].samples.empty());
+
+  const auto& ilk = r.runs[0].samples.front();
+  const kerteriz::Vec3 jiro_hatasi = cfg.scenario.initial_error.segment<3>(9);
+  const kerteriz::Vec3 ivme_hatasi = cfg.scenario.initial_error.segment<3>(12);
+
+  EXPECT_EQ((ilk.estimate.gyro_bias() - (kJiroBias + jiro_hatasi)).cwiseAbs().maxCoeff(), 0.0)
+      << "baslangic kestirimi yapilandirilan gercek bias uzerine kurulmamis";
+  EXPECT_EQ((ilk.estimate.accel_bias() - (kIvmeBias + ivme_hatasi)).cwiseAbs().maxCoeff(), 0.0)
+      << "baslangic kestirimi yapilandirilan gercek bias uzerine kurulmamis";
+
+  const kerteriz::StateVec e = ilk.estimate.minus(ilk.truth);
+  EXPECT_EQ((e.segment<3>(9) - jiro_hatasi).cwiseAbs().maxCoeff(), 0.0)
+      << "jiro bias hatasi yapilandirilan baslangic hatasina esit degil";
+  EXPECT_EQ((e.segment<3>(12) - ivme_hatasi).cwiseAbs().maxCoeff(), 0.0)
+      << "ivme bias hatasi yapilandirilan baslangic hatasina esit degil";
+  // Kurulum kontrolu: yapilandirilan bias sifir olsaydi bu test bos gecerdi.
+  ASSERT_GT(kJiroBias.norm(), 0.0);
+  ASSERT_GT(kIvmeBias.norm(), 0.0);
+}
+
+TEST(MonteCarloTruth, RandomWalkMakesLaterTruthBiasDifferFromInitial) {
+  // Yuruyus ACIK: gercek bias zamanla KAYAR. Kayit yalnizca baslangic degerini
+  // tutsaydi (veya sifir birakssaydi) bu test duserdi.
+  MonteCarloConfig cfg = mc(1);
+  cfg.scenario = bias_senaryosu(/*yuruyus=*/true);
+  cfg.record_state_samples = true;
+
+  const MonteCarloResult r = kerteriz_sim::run_monte_carlo(cfg);
+  ASSERT_EQ(r.runs.size(), 1U);
+  const auto& ornekler = r.runs[0].samples;
+  ASSERT_GT(ornekler.size(), 10U);
+
+  EXPECT_GT((ornekler.back().truth.gyro_bias() - kJiroBias).norm(), 0.0)
+      << "jiro bias'i hic yurumemis";
+  EXPECT_GT((ornekler.back().truth.accel_bias() - kIvmeBias).norm(), 0.0)
+      << "ivme bias'i hic yurumemis";
+
+  // Ilk ornek zaten BIR adim yurumustur: sentezleyici olcumu uretmeden once
+  // bias'i ilerletir.
+  EXPECT_NE(ornekler.front().truth.gyro_bias(), ornekler.back().truth.gyro_bias());
+}
+
+TEST(MonteCarloTruth, RecordedBiasMatchesTheSynthesizerThatProducedThatSample) {
+  // Kaydedilen bias, O DAMGANIN olcumunu ureten bias'in TA KENDISI mi?
+  //
+  // Rastgele yuruyus denklemi burada TEKRARLANMAZ — dogrulugun kaynagi yine
+  // ImuSynthesizer'dir. Ayni tohum ve ayni dt dizisiyle BAGIMSIZ bir
+  // sentezleyici adim adim kosturulur; her adimdan SONRAKI bias'i, kayittaki
+  // ile karsilastirilir. Kayit bir adim geride (sample() oncesi) alinmis olsaydi
+  // bu test duserdi.
+  MonteCarloConfig cfg = mc(1);
+  cfg.scenario = bias_senaryosu(/*yuruyus=*/true);
+  cfg.record_state_samples = true;
+
+  const MonteCarloResult r = kerteriz_sim::run_monte_carlo(cfg);
+  ASSERT_EQ(r.runs.size(), 1U);
+  const auto& ornekler = r.runs[0].samples;
+  ASSERT_FALSE(ornekler.empty());
+
+  const ScenarioConfig& sc = cfg.scenario;
+  kerteriz_sim::SeededRng rng(kerteriz_sim::derive_seeds(kAna, 0).imu);
+  kerteriz_sim::ImuSynthesizer ayna(sc.imu_sim, rng);
+  kerteriz_sim::TrajectoryGenerator yorunge(sc.trajectory);
+
+  const auto adim_sayisi =
+      static_cast<int>(sc.duration_s * static_cast<Scalar>(kerteriz_sim::kNanosecondsPerSecond) /
+                       static_cast<Scalar>(sc.imu_period_ns));
+  TimeNs onceki = 0;
+  std::size_t i = 0;
+  for (int k = 1; k <= adim_sayisi; ++k) {
+    const TimeNs t = static_cast<TimeNs>(k) * sc.imu_period_ns;
+    const Scalar dt = static_cast<Scalar>(t - onceki) * 1e-9;
+    ayna.sample(yorunge.at(t), dt); // bias'i ILERLETIR
+    onceki = t;
+
+    if (i < ornekler.size() && ornekler[i].stamp_ns == t) {
+      EXPECT_EQ((ornekler[i].truth.gyro_bias() - ayna.gyro_bias()).cwiseAbs().maxCoeff(), 0.0)
+          << "damga " << t << ": kayittaki jiro bias'i olcumu ureten bias degil";
+      EXPECT_EQ((ornekler[i].truth.accel_bias() - ayna.accel_bias()).cwiseAbs().maxCoeff(), 0.0)
+          << "damga " << t << ": kayittaki ivme bias'i olcumu ureten bias degil";
+      ++i;
+    }
+  }
+  EXPECT_EQ(i, ornekler.size()) << "her kayit damgasi eslesmedi";
+}
+
 TEST(MonteCarlo, ErrorIsComputableWithTheProjectsOwnConvention) {
   // F2.2 hatayi NavState::minus ile alacak — elde uydurulmus bir Euler farkiyla
   // DEGIL. Kayit bunu mumkun kiliyor mu, burada dogrulanir.
+  //
+  // Senaryo SIFIRDAN FARKLI gercek bias tasir: bias bloklari boylece yalnizca
+  // "sonlu" degil, FIZIKSEL OLARAK ANLAMLIDIR.
   MonteCarloConfig cfg = mc(1);
+  cfg.scenario = bias_senaryosu(/*yuruyus=*/true);
   cfg.record_state_samples = true;
   const MonteCarloResult r = kerteriz_sim::run_monte_carlo(cfg);
   ASSERT_EQ(r.runs.size(), 1U);
@@ -202,10 +346,21 @@ TEST(MonteCarlo, ErrorIsComputableWithTheProjectsOwnConvention) {
     ASSERT_TRUE(e.allFinite());
     EXPECT_EQ(e.tail(kerteriz::kMaxStateDof - kerteriz::kCoreDof).cwiseAbs().maxCoeff(), 0.0)
         << "augmentation kuyrugu sifir olmali";
+    // Gercek bias sifir DEGIL: 15 boyutlu hatanin bias kismi gercek bir
+    // buyuklugun farki.
+    EXPECT_GT(s.truth.gyro_bias().norm(), 0.0) << "gercek jiro bias'i sifir kalmis";
+    EXPECT_GT(s.truth.accel_bias().norm(), 0.0) << "gercek ivme bias'i sifir kalmis";
   }
+
   // Baslangic hatasi kasitlidir; ilk ornekte hata GERCEKTEN sifirdan farkli
   // olmali, yoksa bu test bos gecerdi.
-  EXPECT_GT(r.runs[0].samples.front().estimate.minus(r.runs[0].samples.front().truth).norm(), 1e-3);
+  const auto& ilk = r.runs[0].samples.front();
+  const kerteriz::StateVec e0 = ilk.estimate.minus(ilk.truth);
+  EXPECT_GT(e0.norm(), 1e-3);
+  // Bias bileseni de sifirdan farkli olmali: filtre bias'lari gercek degerden
+  // sapmis durumda baslar (baslangic_hatasi() bias terimleri tasir).
+  EXPECT_GT(e0.segment<3>(9).norm(), 1e-6) << "jiro bias hatasi sifir";
+  EXPECT_GT(e0.segment<3>(12).norm(), 1e-6) << "ivme bias hatasi sifir";
 }
 
 TEST(MonteCarlo, SampleStrideThinsTheRecordWithoutChangingTheFilter) {

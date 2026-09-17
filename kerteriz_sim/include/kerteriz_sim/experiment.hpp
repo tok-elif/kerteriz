@@ -176,6 +176,10 @@ struct RunSeeds {
 
 /// Tek bir andaki gercek/kestirim cifti. HATA BURADA HESAPLANMAZ — F2.2 onu
 /// `NavState::minus` ile alir (CONVENTIONS §3.1 sag perturbasyon).
+///
+/// `truth` TAM 15 DoF'tur: poz/hiz/konumun yani sira jiro ve ivme bias'inin
+/// GERCEK simule edilmis degerini de tasir. Bias'lar sifir birakilsaydi 15
+/// boyutlu hata vektoru bilimsel olarak yanlis olurdu.
 struct StateSample {
   TimeNs stamp_ns = 0;
   NavState truth;
@@ -264,13 +268,25 @@ inline void record_update(RunResult& r, TimeNs stamp_ns, const kerteriz::UpdateR
 
 /// Gercek durumdan NavState.
 ///
+/// BIAS'LAR ZORUNLU PARAMETREDIR, varsayilanlari YOKTUR. Gercek durum 15
+/// serbestlik derecelidir ve jiro/ivme bias'i o 15'in altisidir; sifir birakmak
+/// F2.2'nin `estimate.minus(truth)` ile kuracagi hata vektorunu bilimsel olarak
+/// YANLIS yapardi. Varsayilan deger konsaydi bir cagri yerinde unutmak sessizce
+/// mumkun olurdu — imza bunu imkansiz kilar.
+///
+/// Bias'in KAYNAGI `ImuSynthesizer`'dir. Rastgele yuruyus burada YENIDEN
+/// KURULMAZ; sentezleyicinin o andaki degeri okunur (bkz. run_single).
+///
 /// KUATERNIYON ACIKCA NORMALLESTIRILIR. Yorunge rotasyon MATRISI uretir; ondan
 /// turetilen kuaterniyon birim normdan ~1e-16 sapabilir ve manif bunu reddeder.
-inline NavState truth_state(const TrajectorySample& gt) {
+inline NavState truth_state(const TrajectorySample& gt, const Vec3& gyro_bias,
+                            const Vec3& accel_bias) {
   Eigen::Quaternion<Scalar> q(gt.rotation);
   q.normalize();
   NavState x;
   x.extended_pose() = SE23(gt.position, q, gt.velocity);
+  x.gyro_bias() = gyro_bias;
+  x.accel_bias() = accel_bias;
   return x;
 }
 
@@ -287,8 +303,13 @@ inline RunResult run_single(const ScenarioConfig& cfg, const RunSeeds& seeds, in
   ImuSynthesizer imu_sentez(cfg.imu_sim, imu_rng);
   GnssSynthesizer gnss_sentez(GnssParams{cfg.gnss_position_noise_std, cfg.gnss_rate_hz}, gnss_rng);
 
+  // t = 0'daki gercek durum, sentezleyicinin BASLANGIC bias'larini tasir;
+  // baslangic hatasi bunun UZERINE uygulanir. Sifir varsayilsaydi, sifirdan
+  // farkli bir baslangic bias'i yapilandirildiginda kestirim gercek degerden
+  // ongorulmeyen bir kadar sapardi.
   const TrajectorySample gt0 = yorunge.at(0);
-  const NavState gercek0 = truth_state(gt0);
+  const NavState gercek0 =
+      truth_state(gt0, cfg.imu_sim.initial_gyro_bias, cfg.imu_sim.initial_accel_bias);
   const NavState kestirim0 = gercek0.plus(cfg.initial_error);
 
   RunResult r;
@@ -342,7 +363,11 @@ inline RunResult run_single(const ScenarioConfig& cfg, const RunSeeds& seeds, in
     if (cfg.record_state_samples && (k % cfg.state_sample_stride) == 0) {
       StateSample s;
       s.stamp_ns = t;
-      s.truth = truth_state(gt);
+      // SIRA ONEMLIDIR: `ImuSynthesizer::sample()` bias'i olcumu uretmeden ONCE
+      // ilerletir. Kayit `sample()` cagrisindan SONRA yapildigi icin buradaki
+      // deger, tam olarak BU damganin olcumunu ureten bias'tir. Once okunsaydi
+      // bir adim geride kalirdi.
+      s.truth = truth_state(gt, imu_sentez.gyro_bias(), imu_sentez.accel_bias());
       s.estimate = backend.state();
       s.active_dof = backend.state().active_dof();
       // Faz 2 senaryosunda augmentation yoktur; aktif duzen cekirdektir.

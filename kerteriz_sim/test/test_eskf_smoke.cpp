@@ -188,7 +188,9 @@ TEST(EskfSmoke, NumericalFailureIsCountedSeparatelyFromAccepted) {
   // bu durum uretilemedigi icin sayim mantigi burada dogrudan sinanir.
   const ScenarioConfig cfg = kerteriz_sim::noisy_scenario();
   const auto gt0 = kerteriz_sim::TrajectoryGenerator(cfg.trajectory).at(0);
-  const NavState kestirim0 = kerteriz_sim::truth_state(gt0).plus(cfg.initial_error);
+  const NavState kestirim0 =
+      kerteriz_sim::truth_state(gt0, cfg.imu_sim.initial_gyro_bias, cfg.imu_sim.initial_accel_bias)
+          .plus(cfg.initial_error);
   kerteriz::EskfBackend backend(kerteriz::EskfConfig{kestirim0, NavCovariance::Zero(), 0,
                                                      cfg.imu_filter, cfg.chi2_confidence});
 
