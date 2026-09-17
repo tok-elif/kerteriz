@@ -37,6 +37,11 @@ target_include_directories(kerteriz_sim INTERFACE
 target_link_libraries(kerteriz_sim INTERFACE kerteriz::core)
 target_compile_features(kerteriz_sim INTERFACE cxx_std_17)
 
+# E1 — Faz 2 ESKF tutarlilik deneyi CLI'si. ROS'suz, cizim yapmaz.
+add_executable(kerteriz_e1_eskf src/e1_eskf_main.cpp)
+target_link_libraries(kerteriz_e1_eskf PRIVATE kerteriz::sim)
+
+install(TARGETS kerteriz_e1_eskf DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY include/ DESTINATION include)
 
 # -----------------------------------------------------------------------------

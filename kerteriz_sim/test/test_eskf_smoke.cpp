@@ -46,7 +46,14 @@ using kerteriz_sim::ScenarioConfig;
 constexpr std::uint64_t kImuTohumu = 20260915U;
 constexpr std::uint64_t kGnssTohumu = 777001U;
 
-RunSeeds tohumlar(std::uint64_t gnss = kGnssTohumu) { return RunSeeds{kImuTohumu, gnss}; }
+/// Alan alan atanir: `RunSeeds` alan sirasi degisirse bu cagri SESSIZCE
+/// kaymaz. Toplu ilk-deger kullanildiginda tam olarak o olmustu.
+RunSeeds tohumlar(std::uint64_t gnss = kGnssTohumu) {
+  RunSeeds s;
+  s.imu = kImuTohumu;
+  s.gnss = gnss;
+  return s;
+}
 
 RunResult kos(const ScenarioConfig& cfg, const RunSeeds& s = tohumlar()) {
   return kerteriz_sim::run_single(cfg, s);

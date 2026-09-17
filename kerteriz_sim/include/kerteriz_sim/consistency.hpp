@@ -39,6 +39,7 @@
 
 #include <Eigen/Cholesky>
 #include <Eigen/Core>
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -152,6 +153,29 @@ inline NeesSample compute_nees(const StateSample& s,
   out.valid = true;
   out.status = NeesStatus::kValid;
   return out;
+}
+
+// -----------------------------------------------------------------------------
+// Betimleyici ozet yardimcilari
+// -----------------------------------------------------------------------------
+
+/// Medyan. Bir BETIMLEYICI ozet degeridir — bant matematiginin parcasi degil.
+///
+/// CIFT sayida ornekte ORTA IKI DEGERIN ORTALAMASIDIR. `v[n/2]` tek basina
+/// cift N'de ust-orta ogeyi verir ve medyani sistematik olarak yukari kaydirir;
+/// E1 serisi 150 damgadir, yani tam olarak o durum.
+///
+/// Girdi DEGERLE alinir: cagiranin dizisi siralanarak degistirilmez.
+inline Scalar median(std::vector<Scalar> v) {
+  if (v.empty()) {
+    return Scalar(0);
+  }
+  std::sort(v.begin(), v.end());
+  const std::size_t n = v.size();
+  if (n % 2 == 1) {
+    return v[n / 2];
+  }
+  return Scalar(0.5) * (v[n / 2 - 1] + v[n / 2]);
 }
 
 // -----------------------------------------------------------------------------
