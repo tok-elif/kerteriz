@@ -14,6 +14,13 @@ target_link_libraries(test_synthesizers PRIVATE kerteriz::sim GTest::gtest_main)
 add_test(NAME test_synthesizers COMMAND test_synthesizers)
 
 # F1.5 — sentetik ESKF duman testi (R6). Gercek uretim zinciri uctan uca kosar.
+# F2.1'den sonra senaryo ve dongu experiment.hpp'dedir; test onu cagirir.
 add_executable(test_eskf_smoke test_eskf_smoke.cpp)
 target_link_libraries(test_eskf_smoke PRIVATE kerteriz::sim GTest::gtest_main)
 add_test(NAME test_eskf_smoke COMMAND test_eskf_smoke)
+
+# F2.1 — Monte Carlo kosum altyapisi: tohum turetme, determinizm, on ek
+# kararliligi, kayit sozlesmesi. ISTATISTIK URETMEZ (o F2.2).
+add_executable(test_monte_carlo test_monte_carlo.cpp)
+target_link_libraries(test_monte_carlo PRIVATE kerteriz::sim GTest::gtest_main)
+add_test(NAME test_monte_carlo COMMAND test_monte_carlo)
