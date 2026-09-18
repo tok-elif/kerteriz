@@ -84,6 +84,15 @@ Her dizi için yalnız `oxts/` gerekir; görüntü ve Velodyne **okunmaz**:
 Resmi kaynak `cvlibs.net` KITTI raw sayfasıdır ve **kayıt/kabul gerektirir**.
 Gayriresmî ayna ile bu koşul aşılmaz; veri seti depoya da konmaz.
 
+## Taban çizgisi kök-neden denetimi
+
+`0032` ve `0039` dizilerinde harici `robot_localization` taban çizgisinin
+ıraksamasına dair denetim kaydı: [`baseline_audit.md`](baseline_audit.md).
+Özet: `sensor_timeout`, eksen konvansiyonu, yer çekimi yorumu ve "GNSS
+füzyona girmiyor" hipotezleri **elendi**; büyüyen sorun güncellemeler arası
+ölü-hesap sürüklenmesidir. Mevcut dondurulmuş RL yapılandırması seyrek/uzun
+dizilerde adil bir doğruluk kıyası olarak yorumlanmamalıdır.
+
 ## Bilimsel sınır
 
 `0013` için ölçülen her şey ve ileride bu altı dizi için ölçülecek her şey,
