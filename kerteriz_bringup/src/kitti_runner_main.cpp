@@ -226,9 +226,12 @@ int main(int argc, char** argv) {
               s.reference_used);
   if (kosucu.gnss_sampling.enabled) {
     const auto& p = sonuc.sampling;
-    std::printf("  --- GNSS konum seyreltmesi (stride %d, ~%.2f Hz) ---\n",
-                kosucu.gnss_sampling.stride,
-                9.6554 / static_cast<double>(kosucu.gnss_sampling.stride));
+    // Hz DIZIDEN turetilir; tek bir dizinin olculmus hizi gomulmez.
+    const double aday_hz = kerteriz_bringup::candidate_rate_hz(p);
+    std::printf("  --- GNSS konum seyreltmesi (stride %d) ---\n", kosucu.gnss_sampling.stride);
+    std::printf("    aday hizi                   %.4f Hz\n", aday_hz);
+    std::printf("    efektif olcum hizi          ~%.4f Hz\n",
+                aday_hz / static_cast<double>(kosucu.gnss_sampling.stride));
     std::printf("    baslatma sonrasi aday       %d\n", p.candidate_count);
     std::printf("    secili slot                 %d\n", p.selected_slot_count);
     std::printf("    secili kullanilabilir olcum %d\n", p.selected_usable_count);

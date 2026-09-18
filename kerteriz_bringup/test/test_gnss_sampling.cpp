@@ -219,4 +219,18 @@ TEST(GnssSampling, InterpolatedFramesAreNeitherMeasurementNorWithheld) {
   }
 }
 
+TEST(GnssSampling, CandidateRateIsDerivedFromTheSequenceNotHardCoded) {
+  // Her KITTI dizisinin ornekleme araligi farklidir; tek bir diziden olculmus
+  // sabit bir Hz gomulseydi coklu dizi kosusunda yanlis deger raporlanirdi.
+  const auto p = plan(kareler(21), 10); // 100 ms adim -> 10 Hz
+  ASSERT_TRUE(p.status.ok);
+  EXPECT_EQ(p.candidate_count, 20);
+  EXPECT_EQ(p.candidate_span_ns, 19 * kAdim);
+  EXPECT_NEAR(kerteriz_bringup::candidate_rate_hz(p), 10.0, 1e-9);
+
+  // Bos ve tek adayli durumlarda 0 doner, bolme yapilmaz.
+  SamplingPlan bos;
+  EXPECT_EQ(kerteriz_bringup::candidate_rate_hz(bos), 0.0);
+}
+
 } // namespace

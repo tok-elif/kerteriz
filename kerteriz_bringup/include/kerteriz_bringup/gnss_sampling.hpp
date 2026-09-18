@@ -115,6 +115,11 @@ struct SamplingPlan {
   int selected_interpolated_skipped = 0; ///< secili ama ara-degerlenmis
   int withheld_reference_count = 0;
 
+  /// Ilk adaydan sonuncusuna gecen sure. Efektif aday/olcum hizi buradan
+  /// TURETILIR; bir diziden olculmus sabit bir Hz degeri GOMULMEZ, cunku her
+  /// KITTI dizisinin ornekleme araligi farklidir.
+  TimeNs candidate_span_ns = 0;
+
   std::vector<TimeNs> selected_slot_stamps;      ///< faz denetimi icin
   std::vector<TimeNs> measurement_stamps;        ///< filtreye VERILECEK olanlar
   std::vector<TimeNs> withheld_reference_stamps; ///< degerlendirme kumesi
@@ -123,6 +128,17 @@ struct SamplingPlan {
   /// hangi damganin hangi rolde oldugu dogrudan gosterilebilsin diye.
   std::vector<SamplingRecord> records;
 };
+
+/// Aday akisinin EFEKTIF hizi [Hz]. Tek bir diziden olculmus sabit bir deger
+/// gomulmesin diye plandan turetilir; her KITTI dizisinin ornekleme araligi
+/// farklidir. Aday sayisi 2'den az veya span sifirsa 0 doner.
+inline double candidate_rate_hz(const SamplingPlan& plan) {
+  if (plan.candidate_count < 2 || plan.candidate_span_ns <= 0) {
+    return 0.0;
+  }
+  const double span_s = static_cast<double>(plan.candidate_span_ns) * 1e-9;
+  return static_cast<double>(plan.candidate_count - 1) / span_s;
+}
 
 /// Kosucunun baslatma kaydiyla AYNI kural: ilk ara-degerlenmemis referans poz.
 inline TimeNs initialization_stamp(const std::vector<DatasetEvent>& events, bool& ok) {
@@ -188,6 +204,23 @@ inline SamplingPlan build_sampling_plan(const std::vector<DatasetEvent>& events,
     ++plan.selected_usable_count;
     plan.measurement_stamps.push_back(e.stamp_ns);
     plan.records.push_back(SamplingRecord{e.stamp_ns, ordinal, SamplingRole::kMeasurement});
+  }
+
+  if (plan.candidate_count > 0) {
+    TimeNs ilk = 0;
+    TimeNs son = 0;
+    bool basladi = false;
+    for (const auto& e : events) {
+      if (e.kind != DatasetEventKind::kGnssPosition || e.stamp_ns <= t0) {
+        continue;
+      }
+      if (!basladi) {
+        ilk = e.stamp_ns;
+        basladi = true;
+      }
+      son = e.stamp_ns;
+    }
+    plan.candidate_span_ns = son - ilk;
   }
 
   // GNSS konum adaylarinin damga -> ordinal esleme tablosu; withheld
