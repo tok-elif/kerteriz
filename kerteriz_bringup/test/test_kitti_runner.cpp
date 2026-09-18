@@ -176,4 +176,90 @@ TEST(KittiRunner, GnssVelocityCanBeDisabledForMatchedComparison) {
   EXPECT_GT(r.stats.gnss_position.submitted, 0) << "konum olcumleri de kapanmis";
 }
 
+// -----------------------------------------------------------------------------
+// F2.4-C — GNSS konum seyreltmesi
+// -----------------------------------------------------------------------------
+
+TEST(KittiRunner, SamplingIsOptInAndLegacyPathIsUnchanged) {
+  // Seyreltme bayragi verilmeden davranis LEGACY olmalidir: hicbir olcum
+  // "secilmedi" diye atlanmaz ve withheld kume BOSTUR.
+  const auto ev = fixture_olaylari();
+  const auto r = run_kitti(ev, KittiRunnerConfig{});
+  ASSERT_TRUE(r.ok) << r.message;
+
+  EXPECT_FALSE(KittiRunnerConfig{}.gnss_sampling.enabled) << "seyreltme varsayilan ACIK";
+  EXPECT_EQ(r.stats.gnss_position.skipped_not_selected, 0);
+  EXPECT_TRUE(r.withheld_reference.empty()) << "legacy modda withheld kume dolu";
+  EXPECT_GT(r.stats.gnss_position.submitted, 0);
+}
+
+TEST(KittiRunner, SamplingUsesTheSharedPolicyNotItsOwnCopy) {
+  // Kosucunun plani, politikanin DOGRUDAN cagrilmasiyla ayni olmali. Kosucu
+  // kendi kopyasini tutsaydi iki yol zamanla ayrisir ve harici taban cizgisi
+  // farkli damgalar alirdi.
+  const auto ev = fixture_olaylari();
+  KittiRunnerConfig cfg;
+  cfg.gnss_sampling.enabled = true;
+  cfg.gnss_sampling.stride = 2;
+
+  const auto r = run_kitti(ev, cfg);
+  ASSERT_TRUE(r.ok) << r.message;
+
+  const auto dogrudan = kerteriz_bringup::build_sampling_plan(ev, cfg.gnss_sampling);
+  ASSERT_TRUE(dogrudan.status.ok) << dogrudan.status.message;
+  EXPECT_EQ(r.sampling.init_stamp_ns, dogrudan.init_stamp_ns);
+  EXPECT_EQ(r.sampling.measurement_stamps, dogrudan.measurement_stamps);
+  EXPECT_EQ(r.sampling.selected_slot_stamps, dogrudan.selected_slot_stamps);
+  EXPECT_EQ(r.sampling.withheld_reference_stamps, dogrudan.withheld_reference_stamps);
+}
+
+TEST(KittiRunner, OnlySelectedStampsReachTheFilter) {
+  const auto ev = fixture_olaylari();
+  KittiRunnerConfig cfg;
+  cfg.gnss_sampling.enabled = true;
+  cfg.gnss_sampling.stride = 2;
+
+  const auto r = run_kitti(ev, cfg);
+  ASSERT_TRUE(r.ok) << r.message;
+
+  // Verilen olcum sayisi tam olarak secili-kullanilabilir sayidir.
+  EXPECT_EQ(r.stats.gnss_position.submitted, r.sampling.selected_usable_count);
+  EXPECT_GT(r.stats.gnss_position.skipped_not_selected, 0)
+      << "seyreltme hicbir seyi atlamadi — kapi calismiyor olabilir";
+  EXPECT_EQ(r.stats.gnss_position.total, r.stats.gnss_position.submitted +
+                                             r.stats.gnss_position.skipped_interpolated +
+                                             r.stats.gnss_position.skipped_not_selected + 1)
+      << "sayaclar tutmuyor (+1 = baslatma karesi)";
+}
+
+TEST(KittiRunner, WithheldReferenceIsDisjointFromMeasurements) {
+  const auto ev = fixture_olaylari();
+  KittiRunnerConfig cfg;
+  cfg.gnss_sampling.enabled = true;
+  cfg.gnss_sampling.stride = 2;
+
+  const auto r = run_kitti(ev, cfg);
+  ASSERT_TRUE(r.ok) << r.message;
+  ASSERT_FALSE(r.withheld_reference.empty());
+
+  for (const auto& w : r.withheld_reference) {
+    EXPECT_FALSE(kerteriz_bringup::contains_stamp(r.sampling.measurement_stamps, w.stamp_ns))
+        << "withheld damga ayni zamanda olcum: " << w.stamp_ns;
+  }
+  // Withheld kume, ara-degerlenmemis referansin gercek ALT KUMESIDIR.
+  EXPECT_LE(r.withheld_reference.size(), r.reference.size());
+  EXPECT_EQ(static_cast<int>(r.withheld_reference.size()), r.sampling.withheld_reference_count);
+}
+
+TEST(KittiRunner, InvalidStrideFailsExplicitly) {
+  const auto ev = fixture_olaylari();
+  KittiRunnerConfig cfg;
+  cfg.gnss_sampling.enabled = true;
+  cfg.gnss_sampling.stride = 0;
+
+  const auto r = run_kitti(ev, cfg);
+  EXPECT_FALSE(r.ok) << "gecersiz stride sessizce duzeltilmis";
+  EXPECT_FALSE(r.message.empty());
+}
+
 } // namespace

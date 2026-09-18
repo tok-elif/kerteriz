@@ -4,9 +4,16 @@
 /// Yollar HARDCODE EDILMEZ; veri seti ve cikti CLI ile gelir:
 ///
 ///   kerteriz_kitti_runner --dataset <yol> --output <csv> [--reference <csv>]
+///                         [--emit-baseline-params <yaml>]
 ///                         [--no-gnss-velocity] [--ate-max-dt-ms N]
+///                         [--gnss-position-stride N]
+///                         [--withheld-reference <csv>]
+///                         [--sampling-manifest <csv>]
 ///
 /// Gercek veri seti DEPOYA GIRMEZ ve cikti deponun disina yazilir.
+///
+/// SEYRELTME OPT-IN'DIR (F2.4-C). `--gnss-position-stride` verilmezse davranis
+/// LEGACY'dir ve tam hizli sonuclar bit-birebir korunur.
 
 #include "kerteriz_bringup/ate.hpp"
 #include "kerteriz_bringup/kitti_oxts.hpp"
@@ -91,11 +98,24 @@ bool baslangic_parametreleri_yaz(const std::string& yol,
   return f.good();
 }
 
+/// Seyreltme manifesti — hangi damganin hangi rolde oldugu denetlenebilsin.
+bool manifest_yaz(const std::string& yol, const kerteriz_bringup::SamplingPlan& p) {
+  std::ofstream f(yol);
+  if (!f) {
+    return false;
+  }
+  f << "timestamp_ns,role,ordinal\n";
+  for (const auto& k : p.records) {
+    f << k.stamp_ns << ',' << kerteriz_bringup::to_string(k.role) << ',' << k.ordinal << '\n';
+  }
+  return f.good();
+}
+
 void sensor_yaz(const char* ad, const kerteriz_bringup::SensorCounts& c) {
-  std::printf("  %-14s toplam %d  ara-degerlenmis-atlanan %d  verilen %d  kabul %d  "
-              "chi-kare-kapisi %d  sayisal-basarisizlik %d  tampon-reddi %d\n",
-              ad, c.total, c.skipped_interpolated, c.submitted, c.accepted, c.chi_square_gated,
-              c.numerical_failure, c.buffer_rejected);
+  std::printf("  %-14s toplam %d  ara-degerlenmis-atlanan %d  secilmeyen %d  verilen %d  "
+              "kabul %d  chi-kare-kapisi %d  sayisal-basarisizlik %d  tampon-reddi %d\n",
+              ad, c.total, c.skipped_interpolated, c.skipped_not_selected, c.submitted, c.accepted,
+              c.chi_square_gated, c.numerical_failure, c.buffer_rejected);
 }
 
 } // namespace
@@ -105,6 +125,8 @@ int main(int argc, char** argv) {
   std::string cikti_yolu;
   std::string referans_yolu;
   std::string baseline_param_yolu;
+  std::string withheld_yolu;
+  std::string manifest_yolu;
   kerteriz::TimeNs ate_max_dt_ns = 20000000; // 20 ms
 
   KittiRunnerConfig kosucu;
@@ -122,6 +144,20 @@ int main(int argc, char** argv) {
       referans_yolu = sonraki();
     } else if (a == "--emit-baseline-params") {
       baseline_param_yolu = sonraki();
+    } else if (a == "--gnss-position-stride") {
+      const std::string v = sonraki();
+      kosucu.gnss_sampling.enabled = true;
+      kosucu.gnss_sampling.stride = std::atoi(v.c_str());
+      // Gecersiz deger SESSIZCE duzeltilmez: raporlanan sozlesme ile gercekte
+      // kosulan sozlesme ayrisirdi.
+      if (kosucu.gnss_sampling.stride <= 0) {
+        std::fprintf(stderr, "--gnss-position-stride pozitif olmalidir: %s\n", v.c_str());
+        return 2;
+      }
+    } else if (a == "--withheld-reference") {
+      withheld_yolu = sonraki();
+    } else if (a == "--sampling-manifest") {
+      manifest_yolu = sonraki();
     } else if (a == "--no-gnss-velocity") {
       kosucu.use_gnss_velocity = false;
     } else if (a == "--ate-max-dt-ms") {
@@ -157,6 +193,21 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "referans yazilamadi: %s\n", referans_yolu.c_str());
     return 1;
   }
+  if (!withheld_yolu.empty()) {
+    if (!kosucu.gnss_sampling.enabled) {
+      std::fprintf(stderr, "--withheld-reference yalnizca --gnss-position-stride ile "
+                           "anlamlidir (legacy modda withheld kume bostur)\n");
+      return 2;
+    }
+    if (!referans_yaz(withheld_yolu, sonuc.withheld_reference)) {
+      std::fprintf(stderr, "withheld referans yazilamadi: %s\n", withheld_yolu.c_str());
+      return 1;
+    }
+  }
+  if (!manifest_yolu.empty() && !manifest_yaz(manifest_yolu, sonuc.sampling)) {
+    std::fprintf(stderr, "seyreltme manifesti yazilamadi: %s\n", manifest_yolu.c_str());
+    return 1;
+  }
   if (!baseline_param_yolu.empty() &&
       !baslangic_parametreleri_yaz(baseline_param_yolu, sonuc.init)) {
     std::fprintf(stderr, "taban cizgisi parametreleri yazilamadi: %s\n",
@@ -173,6 +224,17 @@ int main(int argc, char** argv) {
   sensor_yaz("GNSS hiz", s.gnss_velocity);
   std::printf("  referans               toplam %d  ATE'ye giren %d\n", s.reference_total,
               s.reference_used);
+  if (kosucu.gnss_sampling.enabled) {
+    const auto& p = sonuc.sampling;
+    std::printf("  --- GNSS konum seyreltmesi (stride %d, ~%.2f Hz) ---\n",
+                kosucu.gnss_sampling.stride,
+                9.6554 / static_cast<double>(kosucu.gnss_sampling.stride));
+    std::printf("    baslatma sonrasi aday       %d\n", p.candidate_count);
+    std::printf("    secili slot                 %d\n", p.selected_slot_count);
+    std::printf("    secili kullanilabilir olcum %d\n", p.selected_usable_count);
+    std::printf("    secili ama ara-degerlenmis  %d\n", p.selected_interpolated_skipped);
+    std::printf("    withheld referans           %d\n", p.withheld_reference_count);
+  }
   std::printf("  baslatma damgasi       %lld\n", static_cast<long long>(s.init_stamp_ns));
   std::printf("  baslangic konumu       [%.3f %.3f %.3f]\n", sonuc.init.position_w.x(),
               sonuc.init.position_w.y(), sonuc.init.position_w.z());

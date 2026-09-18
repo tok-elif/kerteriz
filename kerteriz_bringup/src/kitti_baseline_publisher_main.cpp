@@ -23,10 +23,12 @@
 /// kayan noktaya cevrilmez, ROS mesaj damgasi saniye+nanosaniye TAMSAYI
 /// alanlarindan kurulur.
 
+#include "kerteriz_bringup/gnss_sampling.hpp"
 #include "kerteriz_bringup/kitti_oxts.hpp"
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -60,6 +62,9 @@ int main(int argc, char** argv) {
   const auto hiz = node->declare_parameter<double>("realtime_factor", 1.0);
   // Taban cizgisine GNSS HIZI verilmez; gerekce yapilandirma dosyasindadir.
   const auto hiz_yayinla = node->declare_parameter<bool>("publish_gnss_velocity", false);
+  // F2.4-C: 0 (veya verilmemis) = LEGACY, seyreltme yok. Pozitif deger
+  // Kerteriz kosucusuyla AYNI saf politikayi calistirir.
+  const auto stride = node->declare_parameter<int>("gnss_position_stride", 0);
 
   if (veri_yolu.empty()) {
     RCLCPP_ERROR(node->get_logger(), "dataset_dir parametresi zorunlu");
@@ -73,6 +78,29 @@ int main(int argc, char** argv) {
   if (!d.ok) {
     RCLCPP_ERROR(node->get_logger(), "KITTI ayristirma hatasi: %s", d.message.c_str());
     return 1;
+  }
+
+  // F2.4-C secim plani. AYNI paylasimli fonksiyon Kerteriz kosucusunda da
+  // kullanilir; iki kestirimci boylece BIREBIR ayni olcum damgalarini alir.
+  // Bu bir iddia degil: asagida damga sayisi ve ozeti basilarak gosterilir.
+  kerteriz_bringup::GnssSamplingPolicy politika;
+  politika.enabled = stride > 0;
+  politika.stride = politika.enabled ? stride : 1;
+  const auto plan = kerteriz_bringup::build_sampling_plan(olaylar, politika);
+  if (!plan.status.ok) {
+    RCLCPP_ERROR(node->get_logger(), "seyreltme plani kurulamadi: %s", plan.status.message.c_str());
+    return 1;
+  }
+  if (politika.enabled) {
+    std::uint64_t ozet = 0;
+    for (const TimeNs t : plan.measurement_stamps) {
+      ozet ^= static_cast<std::uint64_t>(t) + 0x9E3779B97F4A7C15ULL + (ozet << 6) + (ozet >> 2);
+    }
+    RCLCPP_INFO(node->get_logger(),
+                "GNSS konum seyreltmesi acik: stride=%d aday=%d secili_slot=%d olcum=%d "
+                "ara-degerlenmis-atlanan=%d damga_ozeti=%llu",
+                stride, plan.candidate_count, plan.selected_slot_count, plan.selected_usable_count,
+                plan.selected_interpolated_skipped, static_cast<unsigned long long>(ozet));
   }
 
   auto saat = node->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
@@ -90,6 +118,7 @@ int main(int argc, char** argv) {
   int imu_sayisi = 0;
   int gnss_sayisi = 0;
   int atlanan_interpolated = 0;
+  int atlanan_secilmeyen = 0;
 
   for (TimeNs t = bas; t <= son + adim && rclcpp::ok(); t += adim) {
     rosgraph_msgs::msg::Clock c;
@@ -120,6 +149,13 @@ int main(int argc, char** argv) {
       } else if (e.kind == DatasetEventKind::kGnssPosition) {
         if (e.source_interpolated) {
           ++atlanan_interpolated; // Kerteriz ile AYNI politika
+          continue;
+        }
+        // F2.4-C kapisi. Legacy'de `enabled = false` oldugu icin kisa devre
+        // ile hic degerlendirilmez ve eski davranis KORUNUR.
+        if (politika.enabled &&
+            !kerteriz_bringup::contains_stamp(plan.measurement_stamps, e.stamp_ns)) {
+          ++atlanan_secilmeyen;
           continue;
         }
         nav_msgs::msg::Odometry m;
@@ -154,8 +190,9 @@ int main(int argc, char** argv) {
     rclcpp::spin_some(node);
   }
 
-  RCLCPP_INFO(node->get_logger(), "yayin bitti: imu=%d gnss=%d atlanan_interpolated=%d", imu_sayisi,
-              gnss_sayisi, atlanan_interpolated);
+  RCLCPP_INFO(node->get_logger(),
+              "yayin bitti: imu=%d gnss=%d atlanan_interpolated=%d atlanan_secilmeyen=%d",
+              imu_sayisi, gnss_sayisi, atlanan_interpolated, atlanan_secilmeyen);
   // Taban cizgisinin son ciktiyi uretmesi icin kisa bekleme.
   std::this_thread::sleep_for(std::chrono::milliseconds(1500));
   rclcpp::shutdown();
