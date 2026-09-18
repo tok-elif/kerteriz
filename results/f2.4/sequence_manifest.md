@@ -64,7 +64,8 @@ ve ön kayıtlı toplu sonuca **katılmaz**; ayrı, yardımcı gözlem olarak
 raporlanır. Sonuç görüldükten sonra listeye eklenmesi ön kaydı geçersiz
 kılardı.
 
-**Kare sayıları `0013` dışında KATALOG BİLGİSİDİR ve doğrulanmamıştır.**
+**Kare sayıları `0013`, `0027` ve `0039` için ÖLÇÜLMÜŞTÜR; `0009`, `0022` ve
+`0101` için KATALOG BİLGİSİDİR ve doğrulanmamıştır.**
 İndirildiğinde D1 envanteri yeniden çıkarılacak; gerçek sayı katalogdan
 saparsa manifest sapma notuyla güncellenir — dizi seçimi değişmez.
 
