@@ -37,12 +37,32 @@ Seçim ölçütleri (önceden belirlendi, sonuç metriklerine bakılmadan):
 
 | # | dizi | kategori | kare (katalog) | süre (~) | durum |
 |---|---|---|---|---|---|
-| 1 | `2011_09_26_drive_0013_sync` | City | **144 (ölçüldü)** | **14.81 s (ölçüldü)** | **MEVCUT** |
+| 1 | `2011_09_26_drive_0013_sync` | City | **144 (ölçüldü)** | **14.810 s (ölçüldü)** | **MEVCUT** |
 | 2 | `2011_09_26_drive_0009_sync` | City | 447 | ~46 s | eksik |
 | 3 | `2011_09_26_drive_0022_sync` | Residential | 800 | ~83 s | eksik |
-| 4 | `2011_09_26_drive_0039_sync` | Residential | 395 | ~41 s | eksik |
-| 5 | `2011_09_26_drive_0027_sync` | Road | 188 | ~19 s | eksik |
+| 4 | `2011_09_26_drive_0039_sync` | Residential | **395 (ölçüldü)** | **40.672 s (ölçüldü)** | **MEVCUT** |
+| 5 | `2011_09_26_drive_0027_sync` | Road | **188 (ölçüldü)** | **19.371 s (ölçüldü)** | **MEVCUT** |
 | 6 | `2011_09_26_drive_0101_sync` | Road | 936 | ~97 s | eksik |
+
+**Katalog doğrulaması.** `0027` ve `0039` indirildi; ölçülen kare sayıları
+(188 ve 395) manifest yazılırken kaydedilen katalog değerleriyle **birebir**
+uyuştu. Dizi seçimi değişmedi.
+
+Ölçülen envanter (indirilmiş üçü):
+
+| dizi | kare | süre | ara-değerlenmiş | kullanılabilir referans | başlatma sonrası aday | aday hızı |
+|---|---|---|---|---|---|---|
+| `0013` | 144 | 14.810 s | 0 | 144 | 143 | 9.6529 Hz |
+| `0027` | 188 | 19.371 s | 0 | 188 | 187 | 9.6570 Hz |
+| `0039` | 395 | 40.672 s | 0 | 395 | 394 | 9.6889 Hz |
+
+## Ön kayıtlı sete DAHİL OLMAYAN yardımcı dizi
+
+`2011_09_26_drive_0032_sync` (Road, 390 kare, 40.312 s) de sistemde mevcuttur
+ve aynı protokolle koşturulmuştur. **Ön kayıtlı altılının parçası DEĞİLDİR**
+ve ön kayıtlı toplu sonuca **katılmaz**; ayrı, yardımcı gözlem olarak
+raporlanır. Sonuç görüldükten sonra listeye eklenmesi ön kaydı geçersiz
+kılardı.
 
 **Kare sayıları `0013` dışında KATALOG BİLGİSİDİR ve doğrulanmamıştır.**
 İndirildiğinde D1 envanteri yeniden çıkarılacak; gerçek sayı katalogdan
