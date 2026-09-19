@@ -105,6 +105,12 @@ dinamiği dört diziyle ayrıştırılamıyor).
 Mevcut dondurulmuş RL yapılandırması seyrek/uzun dizilerde adil bir doğruluk
 kıyası olarak yorumlanmamalıdır.
 
+## Final rapor sözleşmesi
+
+Sonuçların hangi alanlarla sunulacağı, hangi kabul kapılarından geçeceği ve
+hangi toplu yorumların **yapılmayacağı** — `0009`, `0022`, `0101` görülmeden
+önce donduruldu: [`final_result_contract.md`](final_result_contract.md).
+
 ## Bilimsel sınır
 
 `0013` için ölçülen her şey ve ileride bu altı dizi için ölçülecek her şey,
