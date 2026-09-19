@@ -139,12 +139,45 @@ constexpr std::int64_t days_from_civil(std::int64_t y, unsigned m, unsigned d) {
   return era * 146097LL + static_cast<std::int64_t>(doe) - 719468LL;
 }
 
-/// TAM ONDALIK ISARETLI TAMSAYI. Ondalik nokta, ussel gosterim veya artik
-/// simge iceren bir alan tamsayi DEGILDIR ve reddedilir.
+/// TAMSAYI DEGERLI KATEGORIK ALAN. Sonucu bir `int` kod degeridir.
 ///
-/// NOT: NCLT tarafinda ayni sozlesmeyi zorlayan ayri bir ayristirici vardir.
-/// Ortak bir yardimciya tasimak ayri bir temizlik isidir; bu adimin kapsami
-/// disindadir.
+/// ==================== NEDEN ONDALIK BICIM DE KABUL EDILIR ==================
+///
+/// F1.8-A'da bu kapi "tam tamsayi" olarak konmustu ve gerekcesi SESSIZ KIRPMA
+/// YASAGIYDI: `3.7` kayan noktaya cevrilip `3` yapilsaydi, veri setinin
+/// soyledigi sey ile ayristiricinin urettigi kod degeri sessizce ayrisirdi.
+///
+/// F2.4-D'de indirilmis 10 KITTI dizisinin 20660 kategorik simgesi tek tek
+/// TARANDI. Olculen gercek: KITTI kisa OXTS kesintilerinde kaydin TUM 30
+/// alanini ara-degerler ve o kareyi tek tip `%.14f` ile yazar — kategorik
+/// alanlar dahil. Yani eksik-bilgi isareti `-1` yerine `-1.00000000000000`
+/// olarak gelir. Taramanin sonucu:
+///
+///   20465 simge  tamsayi                   ("4", "-1")
+///     195 simge  kesir kismi TAMAMEN SIFIR ("-1.00000000000000")
+///       0 simge  kesir kismi sifirdan farkli
+///       0 simge  ussel gosterim
+///       0 simge  bozuk / artik simgeli
+///
+/// 195 simgenin tamami 14 basamakli ve tamami sifir; etkilenen 39 karenin
+/// hepsinde bes kategorik alanin BESI de ondalik (kismi vaka yok).
+///
+/// Dolayisiyla kapi DAR bicimde genisletilir: kesir kismi TAMAMEN sifirsa
+/// simge kabul edilir, aksi halde reddedilir. Sessiz kirpma yasagi AYNEN
+/// durur — `3.7` ve `5.0001` hala reddedilir, cunku kirpilacak bir sey
+/// oldugunda kirpmiyoruz, REDDEDIYORUZ.
+///
+/// KAYAN NOKTA KULLANILMAZ. `stod`/cast yolu, tam da onlemek istedigimiz
+/// yuvarlama semantigini geri getirirdi; karar metinsel ve tamsayi
+/// aritmetigiyle verilir.
+///
+/// Kabul:  "5"  "-1"  "5.0"  "5.000000"  "-1.00000000000000"  "+4.000"
+/// Ret:    "3.7"  "5.0001"  "2e0"  "5."  ".0"  "abc"  artik simge  tasma
+///
+/// NOT: NCLT tarafinda ayni sozlesmeyi zorlayan ayri bir ayristirici vardir ve
+/// BU DEGISIKLIKTEN ETKILENMEZ — gerekce KITTI'ye ozgu bir yazim bicimidir,
+/// NCLT'de boyle bir kayit gozlenmemistir. Ortak bir yardimciya tasimak ayri
+/// bir temizlik isidir; bu adimin kapsami disindadir.
 inline bool tam_isaretli_sayi(const std::string& token, int& out) {
   std::size_t i = 0;
   while (i < token.size() && std::isspace(static_cast<unsigned char>(token[i])) != 0) {
@@ -168,8 +201,31 @@ inline bool tam_isaretli_sayi(const std::string& token, int& out) {
     }
   }
   if (i == rakam_bas) {
-    return false;
+    return false; // ".0" gibi tamsayi basamagi olmayan simge
   }
+
+  // Istege bagli ondalik kisim: YALNIZCA tamami sifir olan bir kesir kabul
+  // edilir. Basamak yoksa ("5.") simge bozuktur; sifirdan farkli tek bir
+  // basamak ("3.7", "5.0001") simgeyi reddettirir.
+  if (i < token.size() && token[i] == '.') {
+    ++i;
+    const std::size_t kesir_bas = i;
+    for (; i < token.size(); ++i) {
+      const auto c = static_cast<unsigned char>(token[i]);
+      if (std::isdigit(c) == 0) {
+        break;
+      }
+      if (token[i] != '0') {
+        return false; // kesir sifir degil -> kirpma yerine RET
+      }
+    }
+    if (i == kesir_bas) {
+      return false; // "5." — ondalik nokta var, basamak yok
+    }
+  }
+
+  // Sayidan sonra bosluk disinda hicbir sey olamaz: "2e0" ve artik simgeler
+  // burada duser.
   for (std::size_t k = i; k < token.size(); ++k) {
     if (std::isspace(static_cast<unsigned char>(token[k])) == 0) {
       return false;

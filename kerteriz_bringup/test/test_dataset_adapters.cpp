@@ -172,11 +172,78 @@ TEST(KittiOxts, CategoricalFieldsAreExactIntegers) {
   EXPECT_FALSE(r.interpolated_missing);
 
   for (int alan = 25; alan < 30; ++alan) {
-    for (const char* bozuk : {"3.7", "2e0", "abc", "", "5.0"}) {
+    // "5.0" ARTIK BOZUK DEGILDIR (asagidaki teste bakin): KITTI'nin gercek
+    // ara-degerlenmis kare bicimi budur. Reddedilenler kirpma gerektirenler.
+    for (const char* bozuk : {"3.7", "5.0001", "2e0", "abc", "", "5.", ".0", "1.2.3", "4.0x"}) {
       EXPECT_FALSE(parse_oxts_line(oxts_satiri({{alan, bozuk}}), r))
           << "alan " << alan << " kabul etti: '" << bozuk << "'";
     }
+    // Tasma: int araligini asan simge reddedilir, sarmalanmaz.
+    EXPECT_FALSE(parse_oxts_line(oxts_satiri({{alan, "2147483648"}}), r))
+        << "alan " << alan << " tasmayi kabul etti";
+    EXPECT_FALSE(parse_oxts_line(oxts_satiri({{alan, "99999999999.000"}}), r))
+        << "alan " << alan << " ondalik tasmayi kabul etti";
   }
+}
+
+TEST(KittiOxts, IntegerValuedDecimalCategoricalIsAccepted) {
+  // F2.4-D'de olculen gercek: KITTI ara-degerlenmis kareyi tek tip `%.14f`
+  // ile yazar, kategorik alanlar dahil. Kesir kismi TAMAMEN sifir oldugu
+  // surece bu kayipsiz bir tamsayidir ve reddedilmesi veriyi dusururdu.
+  OxtsRecord r;
+  for (int alan = 25; alan < 30; ++alan) {
+    for (const char* kabul : {"5.0", "5.000000", "5.00000000000000", "+5.000"}) {
+      OxtsRecord q;
+      ASSERT_TRUE(parse_oxts_line(oxts_satiri({{alan, kabul}}), q))
+          << "alan " << alan << " reddetti: '" << kabul << "'";
+      const int okunan = alan == 25   ? q.navstat
+                         : alan == 26 ? q.numsats
+                         : alan == 27 ? q.posmode
+                         : alan == 28 ? q.velmode
+                                      : q.orimode;
+      EXPECT_EQ(okunan, 5) << "alan " << alan << " simgesi '" << kabul << "'";
+    }
+  }
+
+  // Bes kategorik alanin BESI birden ondalik — gercek ara-degerlenmis karede
+  // kismi vaka gozlenmedi, hepsi birlikte gelir.
+  ASSERT_TRUE(parse_oxts_line(oxts_satiri({{25, "4.00000000000000"},
+                                           {26, "10.00000000000000"},
+                                           {27, "4.00000000000000"},
+                                           {28, "4.00000000000000"},
+                                           {29, "0.00000000000000"}}),
+                              r));
+  EXPECT_EQ(r.navstat, 4);
+  EXPECT_EQ(r.numsats, 10);
+  EXPECT_EQ(r.posmode, 4);
+  EXPECT_EQ(r.velmode, 4);
+  EXPECT_EQ(r.orimode, 0);
+  EXPECT_FALSE(r.interpolated_missing) << "hicbiri -1 degil";
+}
+
+TEST(KittiOxts, DecimalMissingMarkerStillSetsInterpolatedFlag) {
+  // Isaretin DEGERI tasinmali, bicimi degil: "-1.00000000000000" ile "-1"
+  // ayni eksik-bilgi isaretidir. Bicim yuzunden bayrak dusseydi
+  // ara-degerlenmis kare sessizce "saglikli" sayilirdi.
+  OxtsRecord r;
+  ASSERT_TRUE(parse_oxts_line(
+      oxts_satiri(
+          {{27, "-1.00000000000000"}, {28, "-1.00000000000000"}, {29, "-1.00000000000000"}}),
+      r));
+  EXPECT_EQ(r.posmode, -1);
+  EXPECT_EQ(r.velmode, -1);
+  EXPECT_EQ(r.orimode, -1);
+  EXPECT_TRUE(r.interpolated_missing);
+
+  // Tek bir ondalik -1 de yeterlidir.
+  ASSERT_TRUE(parse_oxts_line(oxts_satiri({{28, "-1.0"}}), r));
+  EXPECT_EQ(r.velmode, -1);
+  EXPECT_TRUE(r.interpolated_missing);
+
+  // navstat isaretci alanlarindan biri DEGILDIR — ondalik bicimde de degil.
+  ASSERT_TRUE(parse_oxts_line(oxts_satiri({{25, "-1.000"}}), r));
+  EXPECT_EQ(r.navstat, -1);
+  EXPECT_FALSE(r.interpolated_missing);
 }
 
 TEST(KittiOxts, MinusOneIsAValidMissingMarkerNotAParseError) {

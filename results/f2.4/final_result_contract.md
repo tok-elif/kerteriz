@@ -41,8 +41,8 @@ Final tabloya **yalnızca** şu altı dizi girer:
 2011_09_26_drive_0101_sync
 ```
 
-`2011_09_26_drive_0032_sync` bu kümeye **girmez** — hiçbir koşulda, hiçbir
-istatistikte, hiçbir tamamlanma sayımında. Bkz. §5.
+**Yardımcı küme** (`0032`, `0070`, `0079`, `0104`) bu kümeye **girmez** —
+hiçbir koşulda, hiçbir istatistikte, hiçbir tamamlanma sayımında. Bkz. §5.
 
 ---
 
@@ -136,7 +136,7 @@ Birleştirilmiş tek bir sayı birincil sonuç **değildir**.
 * toplam skor, doğruluk sıralaması (accuracy ranking)
 * **global pooled RMSE** (dizileri birleştiren tek RMSE)
 * **süre ağırlıklı** (duration-weighted) skor veya benzeri ağırlıklandırma
-* `0032`'nin herhangi bir toplu sayıya katılması
+* **yardımcı kümeden** herhangi bir dizinin toplu bir sayıya katılması
 
 Gerekçe [`baseline_audit.md`](baseline_audit.md)'dedir: mevcut dondurulmuş RL
 seyrek taban çizgisi, uzun ve dinamik dizilerde **adil bir doğruluk kıyası
@@ -167,19 +167,39 @@ eklenmez**.
 
 ---
 
-## 5. Yardımcı gözlem — `0032`
+## 5. Yardımcı gözlem — dondurulmuş yardımcı küme
 
-`2011_09_26_drive_0032_sync`, §2'deki **aynı temel alanlarla** ve **aynı
-protokolle**, **ayrı bir "yardımcı gözlem" tablosunda** verilebilir.
+```
+2011_09_26_drive_0032_sync
+2011_09_26_drive_0070_sync
+2011_09_26_drive_0079_sync
+2011_09_26_drive_0104_sync
+```
 
-Buna karşılık `0032`:
+Bu dördü §2'deki **aynı temel alanlarla** ve **aynı protokolle**, **ayrı bir
+"yardımcı gözlem" tablosunda** verilebilir.
+
+Buna karşılık yardımcı kümenin her dizisi:
 
 * ön kayıtlı istatistiklere **katılmaz**,
 * §4'ün izin verdiği aralıklara **girmez**,
 * dizi seçimi için **kanıt olarak kullanılmaz**,
-* **6/6 tamamlanma sayımına girmez** (6/6 yalnızca §1'in altısıdır).
+* **6/6 tamamlanma sayımına girmez** (6/6 yalnızca §1'in altısıdır),
+* yalnızca **dayanıklılık (robustness) ve mekanizma gözlemi** içindir.
 
-Yardımcı tablo, başlığında bu dört kısıtı **yazılı olarak** taşır.
+Yardımcı tablo, başlığında bu kısıtları **yazılı olarak** taşır.
+
+### Bu bir sonuç-sonrası genişletme DEĞİLDİR
+
+`0070`, `0079` ve `0104` kümeye **`15bcb5b` commit'inde**, **hiçbir kestirim
+sonucu görülmeden** eklenip donduruldu — o commit'te Kerteriz koşusu,
+`robot_localization` koşusu, evo veya RMSE üretilmemişti ve hâlâ
+üretilmemiştir. Seçim ölçütü yalnızca "aynı takvim gününden, edinilebilir ek
+dizi"dir.
+
+Sonuç görüldükten **sonra** bu listeye dizi eklenmesi veya bir yardımcı dizinin
+birincil kümeye terfi ettirilmesi ön kaydı geçersiz kılar ve §4 uyarınca
+**yasaktır**.
 
 ---
 
@@ -240,7 +260,7 @@ kapsamına alınıp alınmayacağı **F2.5 kapsamı belirlenirken** karara bağl
 
 - [ ] §1'deki **6/6** ön kayıtlı dizi mevcut ve koşturulmuş
 - [ ] her dizi için **tüm kabul kapıları raporlanmış** (PASS veya FAIL + gerekçe)
-- [ ] `0032` **ayrı** yardımcı tabloda, ön kayıtlı istatistiklerin dışında
+- [ ] **yardımcı küme ayrı** tabloda, ön kayıtlı istatistiklerin dışında
 - [ ] sonuç sözleşmesine sonuçtan sonra **hiçbir ölçüt eklenmemiş** (§4)
 - [ ] final dokümanlar gerçek sonuçlarla **doldurulmuş** (bu sözleşme boş kalır)
 - [ ] **tam yerel doğrulama** geçmiş (CLAUDE.md §6'nın dört komutu)

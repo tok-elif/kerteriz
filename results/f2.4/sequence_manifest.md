@@ -64,30 +64,37 @@ hiçbiri elle tahmin edilmedi. Kestirim çalıştırılmadı, sonuç üretilmedi
 | dizi | kare | damga | süre | ara-değerlenmiş | kullanılabilir referans | başlatma sonrası aday | aday hızı |
 |---|---|---|---|---|---|---|---|
 | `0013` | 144 | 144 | 14.810 s | 0 | 144 | 143 | 9.6529 Hz |
-| `0009` | 447 | 447 | 46.172 s | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ |
+| `0009` | 447 | 447 | 46.172 s | 4 | 443 | 446 | 9.6609 Hz |
 | `0022` | 800 | 800 | 82.774 s | 0 | 800 | 799 | 9.6524 Hz |
 | `0039` | 395 | 395 | 40.672 s | 0 | 395 | 394 | 9.6889 Hz |
 | `0027` | 188 | 188 | 19.371 s | 0 | 188 | 187 | 9.6570 Hz |
-| `0101` | 936 | 936 | 96.624 s | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ |
+| `0101` | 936 | 936 | 96.624 s | 2 | 934 | 935 | 9.6763 Hz |
 
-Boş alan bırakılmaz: `0009` ve `0101` için bu dört alan **ÖLÇÜLEMEDİ** ve
-gerekçesi aşağıdadır. Kare/damga/süre alanları bu dizilerde de gerçek
-`parse_kitti_timestamp` ile ÖLÇÜLDÜ; katalogdan alınmadı.
+**Birincil küme fiziksel olarak 6/6 MEVCUT ve 6/6 AYRIŞTIRILABİLİR.**
+Hiçbir alan ÖLÇÜLEMEDİ değildir; altı dizinin tüm envanter alanları gerçek
+ayrıştırıcı ve gerçek örnekleme politikasıyla okunmuştur.
 
-### ÖLÇÜLEMEDİ gerekçesi — ayrıştırıcı ara-değerlenmiş kareyi reddediyor
+### TARİHSEL KAYIT — ayrıştırıcı engeli: bulundu ve çözüldü
 
-KITTI, kısa OXTS kesintilerinde kaydın tüm alanlarını doğrusal ara-değerler ve
-bunu son üç kipi (`posmode`, `velmode`, `orimode`) `-1` yaparak işaretler.
-Ölçülen gerçek: bu karelerde veri seti **kategorik alanları da ondalık biçimde**
-yazıyor — `-1.00000000000000`, normal karelerdeki `4 8 4 4 0` yerine.
+**Durum: ÇÖZÜLDÜ.** Engel `15bcb5b` commit'inde tespit edilip kayda geçti;
+biçim-uyumluluğu düzeltmesi **bu dosyanın güncellendiği commit'te** yapıldı.
+Kayıt silinmiyor: neyin neden ölçülemediği ve nasıl çözüldüğü, sonradan
+"zaten çalışıyordu" diye okunmasın diye duruyor.
 
-Depodaki ayrıştırıcı kategorik alanların **tam tamsayı** olmasını şart koşar
-(`tam_isaretli_sayi`, F1.8-A'da bilinçli olarak konmuş bir veri-kalitesi
+**Bulgu.** KITTI, kısa OXTS kesintilerinde kaydın tüm alanlarını doğrusal
+ara-değerler ve bunu son üç kipi (`posmode`, `velmode`, `orimode`) `-1`
+yaparak işaretler. Ölçülen gerçek: bu karelerde veri seti **30 alanın tamamını**
+tek tip `%.14f` ile yazıyor — kategorik alanlar dahil. Yani işaret
+`-1.00000000000000` olarak geliyor, normal karelerdeki `4 8 4 4 0` yerine.
+
+Depodaki ayrıştırıcı kategorik alanların **tam tamsayı** olmasını şart
+koşuyordu (`tam_isaretli_sayi`, F1.8-A'da bilinçli konmuş bir veri-kalitesi
 kapısı: `3.7` sessizce `3` olmasın diye). Ondalık nokta gördüğü anda satırı
-reddeder, `load_kitti_oxts` ilk redde tüm diziyi düşürür.
+reddediyor, `load_kitti_oxts` ilk redde tüm diziyi düşürüyordu.
 
-İndirilmiş on dizinin **3832 karesi tek tek denendi**; ondalık-kategorik kare
-kümesi ile `-1` işaretli kare kümesi **birebir aynıdır, sıfır istisna**:
+Ölçüm sırasında indirilmiş on dizinin **3832 karesi tek tek denendi**;
+ondalık-kategorik kare kümesi ile `-1` işaretli kare kümesi **birebir aynı
+çıktı, sıfır istisna**:
 
 | dizi | kare | reddedilen | ilk reddedilen kare |
 |---|---|---|---|
@@ -102,11 +109,38 @@ kümesi ile `-1` işaretli kare kümesi **birebir aynıdır, sıfır istisna**:
 | `0079` | 100 | **1** | 47 |
 | `0104` | 312 | **12** | 45 |
 
-Yani kapı, tam da veri setinin **kendi eksik-bilgi işaretini taşıyan** kareleri
-reddediyor. **Bu bir karardır, sessizce verilmez:** ayrıştırıcıya
-dokunulmamıştır, seçim değiştirilmemiştir, sayı uydurulmamıştır. Birincil set
-fiziksel olarak 6/6 mevcuttur; ayrıştırılabilirlik 4/6'dır ve bu fark burada
-açıkça kayıtlıdır.
+Yani kapı, tam da veri setinin **kendi eksik-bilgi işaretini taşıyan**
+kareleri reddediyordu. O turda ayrıştırıcıya dokunulmadı, seçim değiştirilmedi,
+sayı uydurulmadı; birincil set fiziksel 6/6 ama ayrıştırılabilir 4/6 olarak
+raporlandı ve karar kullanıcıya bırakıldı.
+
+**Çözüm — biçim uyumluluğu, kapı gevşetmesi DEĞİL.** Karar verilmeden önce on
+dizinin **20660 kategorik simgesinin tamamı** tarandı:
+
+| simge sınıfı | adet |
+|---|---|
+| tamsayı (`4`, `-1`) | 20465 |
+| ondalık, kesir kısmı **tamamen sıfır** (`-1.00000000000000`) | 195 |
+| ondalık, kesir kısmı sıfırdan farklı | **0** |
+| üssel gösterim | **0** |
+| bozuk / artık simgeli | **0** |
+
+195 simgenin tamamı 14 basamaklı ve tamamı sıfır; etkilenen 39 karenin
+hepsinde beş kategorik alanın **beşi de** ondalık (kısmi vaka yok).
+
+Buna göre `tam_isaretli_sayi` **dar** biçimde genişletildi: kesir kısmı
+tamamen sıfırsa simge kabul edilir, aksi halde reddedilir. Karar metinsel ve
+tamsayı aritmetiğiyle verilir; **kayan noktaya çevirme veya cast yoktur** —
+o yol tam da önlenmek istenen yuvarlama semantiğini geri getirirdi.
+
+F1.8-A'nın **sessiz kırpma yasağı aynen durur**: `3.7` ve `5.0001` hâlâ
+reddedilir, çünkü kırpılacak bir şey olduğunda kırpmıyoruz, **reddediyoruz**.
+`2e0`, `5.`, `.0`, artık simge ve taşma da reddedilmeye devam eder.
+Eksik-bilgi işaretinin **değeri** taşınır, biçimi değil: `-1.00000000000000`
+ile `-1` aynı işarettir ve `interpolated_missing` ikisinde de kurulur.
+
+**NCLT ayrıştırıcısına dokunulmadı** — gerekçe KITTI'ye özgü bir yazım
+biçimidir.
 ## YARDIMCI KÜME — DONDURULDU (sonuç görülmeden)
 
 Aşağıdaki dört dizi sistemde mevcuttur ve **bu bölüm herhangi bir sonuç,
@@ -117,13 +151,13 @@ alınmamıştır.
 | dizi | kare | damga | süre | ara-değerlenmiş | kullanılabilir referans | başlatma sonrası aday | aday hızı |
 |---|---|---|---|---|---|---|---|
 | `0032` | 390 | 390 | 40.312 s | 0 | 390 | 389 | 9.6489 Hz |
-| `0070` | 420 | 420 | 43.307 s | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ |
-| `0079` | 100 | 100 | 10.240 s | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ |
-| `0104` | 312 | 312 | 32.171 s | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ | ÖLÇÜLEMEDİ |
+| `0070` | 420 | 420 | 43.307 s | 20 | 400 | 418 | 9.6748 Hz |
+| `0079` | 100 | 100 | 10.240 s | 1 | 99 | 99 | 9.6643 Hz |
+| `0104` | 312 | 312 | 32.171 s | 12 | 300 | 311 | 9.6660 Hz |
 
-`0070`, `0079` ve `0104` için gerekçe birincil kümedekiyle **aynıdır**:
-ara-değerlenmiş kareler ondalık kategorik alan taşıyor ve ayrıştırıcı kapısı
-onları reddediyor (yukarıdaki bölüm).
+Dördü de ayrıştırılabilir; `0070`/`0079`/`0104` alanları da biçim uyumluluğu
+düzeltmesinden sonra ölçüldü. `0070`'te ilk kare ara-değerlenmiş olduğu için
+başlatma damgası ikinci kareden alınır — aday sayısının 418 olması bundandır.
 
 **Kategori.** `0032` için `Road` daha önce kaydedilmişti ve değiştirilmedi.
 `0070`, `0079` ve `0104` için **kategori bilgisi YAZILMAMIŞTIR**: elde
