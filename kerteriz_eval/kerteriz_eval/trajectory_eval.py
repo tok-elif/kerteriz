@@ -46,6 +46,16 @@ yönelime **bağlıdır**; birim kuaterniyonla kullanılırsa sonuç anlamsızd�
 Bu yüzden dışa aktarım fonksiyonunun adı niyeti taşır ve bu kısıt burada
 yazılıdır. Birim kuaterniyonlar **gerçek kestirimci yönelimi değildir** ve
 öyleymiş gibi sunulmaz.
+
+`evo` çapraz kontrolü neyi doğrular, neyi doğrulamaz
+---------------------------------------------------
+CLI dışa aktarımı, kestirim örneklerini **ortak destekteki referans
+damgalarıyla** yazar (`_samples_on`). Bu bilinçlidir — `evo` ile karşılaştırma
+aynı nokta çiftleri üzerinde yapılsın diye. Sonucu şudur: `evo` bağımsız olarak
+yeniden hesapladığı şey **öteleme APE aritmetiğidir**, zaman eşleştirmesi
+**değildir**; eşleştirme dışa aktarımda zaten sabitlenmiştir. Eşleştirme
+sözleşmesinin güvencesi bu modülün ve ``ate.hpp``'nin birim testleridir, `evo`
+değildir. Dürüst ad: *evo ölçüt-aritmetiği çapraz kontrolü*.
 """
 
 import argparse

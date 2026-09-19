@@ -1,5 +1,22 @@
 # F2.4-D · Taban çizgisi kök-neden denetimi
 
+> **Provenance — bu dosya nedir, ne değildir.**
+>
+> * Bu bir **teşhis denetimi kaydıdır** (diagnostic audit record): tek seferlik
+>   bir kök-neden daraltma çalışmasının not defteri.
+> * Buradaki sayılar **harici KITTI verisi** (depoda değildir, kayıt gerektirir)
+>   ve **kurulu `robot_localization` 3.5.4** ile üretilmiştir.
+> * **`make results` tarafından yeniden üretilen bir Faz 2 artefaktı DEĞİLDİR.**
+>   Depoda bu tabloları üreten bir betik yoktur; dosya kendi başına yeniden
+>   üretilebilir değildir ve öyleymiş gibi okunmamalıdır.
+> * Bu içeriğin Faz 2 tekrarlanabilirlik kapsamına girip girmeyeceği —
+>   betikleştirilip `make results` altına alınması, ham çıktıların
+>   commit'lenmesi veya kalıcı olarak kapsam dışı bırakılması — **F2.5
+>   tekrarlanabilirlik kapsamı belirlenirken ayrıca ele alınacaktır.**
+> * Hüküm ve gözlemler bu sınırla birlikte okunur: doğrulanabilir olan kısım
+>   kod tarafındadır (paylaşımlı seçim politikası, sözleşme testleri, ölçüt
+>   birim testleri), tablolar ise kayıttır.
+
 **Bu dosya sonuç tablosu değildir.** `0032` ve `0039` dizilerinde harici
 `robot_localization` taban çizgisinin ıraksamasının kaynağını daraltmak için
 yapılan denetimin kaydıdır. Denetim sırasında **hiçbir kod veya yapılandırma
@@ -80,8 +97,14 @@ seçili her GNSS damgasında RL hatasının öncesi/sonrası ölçüldü:
 | 0032 | 38.24 s | 5.1190 | 2.0080 | 3.1110 | 0.61 |
 | 0039 | 38.09 s | 27.1353 | 8.0579 | 19.0775 | 0.70 |
 
-Düzeltmeler **gerçekten uygulanıyor** — 0039'da tek güncellemede 19 m. Üstelik
-düzeltme *oranı* zamanla çökmüyor (0.65 – 0.78 bandında kalıyor).
+Düzeltmeler **gerçekten uygulanıyor** — 0039'da tek güncellemede 19 m.
+
+**Kapsam uyarısı.** Yukarıdaki satırlar dizi başına **tek bir örnek
+güncellemedir** (`örnek (t)` sütunu); kaydedilen dört örnekte oran 0.61 – 0.91
+arasındadır. Güncelleme başına oran dağılımı **kaydedilmedi**, bu yüzden bu
+denetimin daha önceki "düzeltme oranı 0.65 – 0.78 bandında sabit kalıyor"
+ifadesi **geri çekilmiştir**: elde o bandı destekleyen kayıt yoktur. Oranın
+zaman içinde nasıl davrandığı bu kayıttan **bilinmemektedir**.
 
 ## Doğrulanan gözlem
 
@@ -121,9 +144,12 @@ Hız **büyüklüğü** (çerçeveden bağımsız) OXTS'e karşı:
 | 0032 | 1.362 m/s | 4.681 | 0.069 | 15.48 / 15.54 |
 | 0039 | 5.617 m/s | 32.628 | 0.066 | **22.81 / 3.04** |
 
-Düzeltme oranı sabit kaldığına göre (bölüm 4), büyüyen şey **güncellemeler
-arasındaki ölü-hesap sürüklenmesidir**. Hız büyüklüğü çerçeveden bağımsız
-olduğu için bu bir eksen/çerçeve sorunu **değildir** (bölüm 2 ile de elendi).
+Düzeltmeler uygulandığına ve örneklenen anlarda hatayı belirgin biçimde
+düşürdüğüne göre (bölüm 4), büyüyen hata **güncellemeler arasında** birikiyor
+olmalıdır — yani ölü-hesap sürüklenmesi. Bu okuma kayıtla **tutarlıdır**;
+düzeltme oranının zaman içinde bozulmadığı **ölçülmediği** için okuma kayıtla
+kanıtlanmış değildir. Hız büyüklüğü çerçeveden bağımsız olduğu için bu bir
+eksen/çerçeve sorunu **değildir** (bölüm 2 ile de elendi).
 
 ### Mekanizma adayı — İZOLE EDİLMEDİ
 
@@ -149,9 +175,19 @@ ayrıştırılamaz**.
 
 * Kerteriz ve değerlendirme altyapısında **correctness bug bulunmadı**: ölçüm
   damga kümeleri iki kestirimcide birebir eşit, ölçüm ve withheld kümeleri
-  ayrık, her iki kestirimci aynı destekte puanlanıyor, `evo` çapraz kontrolü
-  dört dizide iç ATE ile ≤1.8e-15 uyumlu, üç RL tekrarı arasındaki yayılım
-  ≤4.4e-11.
+  ayrık, her iki kestirimci aynı destekte puanlanıyor, **`evo` ölçüt-aritmetiği
+  çapraz kontrolü** dört dizide iç ATE ile ≤1.8e-15 uyumlu, üç RL tekrarı
+  arasındaki yayılım ≤4.4e-11.
+
+  **`evo` çapraz kontrolünün kapsamı — ne doğrular, ne doğrulamaz.** TUM dışa
+  aktarımı (`kerteriz_eval/trajectory_eval.py`) kestirim örneklerini **ortak
+  destek üzerindeki referans damgalarıyla** yeniden damgalar. Dolayısıyla `evo`
+  bağımsız olarak yeniden hesapladığı şey **öteleme APE aritmetiğidir**:
+  aynı nokta çiftleri üzerinde mesafeler, karesel ortalama ve maksimum.
+  **Zaman eşleştirmesini bağımsız doğrulamaz** — eşleştirme dışa aktarımda
+  zaten sabitlenmiştir, `evo` onu yeniden türetmez. Eşleştirme sözleşmesinin
+  güvencesi ayrıdır: C++ (`ate.hpp`) ve Python uygulamalarının birim testleri
+  (en yakın damga, eşitlikte erken, tolerans sınırı, örnek tüketilmemesi).
 * **Mevcut dondurulmuş RL yapılandırması, seyrek ve uzun dizilerde adil bir
   "hangi kestirimci daha doğru" kıyası olarak yorumlanmamalıdır.** RL'den,
   hiç ölçülmeyen kendi yönelimine dayanarak yer çekimi çıkarması ve tek

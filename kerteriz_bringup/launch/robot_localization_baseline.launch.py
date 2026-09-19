@@ -30,7 +30,14 @@ def generate_launch_description():
             DeclareLaunchArgument("realtime_factor", default_value="4.0"),
             # F2.4-C: 0 = LEGACY (seyreltme yok). Pozitif deger Kerteriz
             # kosucusundaki --gnss-position-stride ile AYNI olmalidir.
-            DeclareLaunchArgument("gnss_position_stride", default_value="0"),
+            #
+            # VARSAYILANI YOKTUR — BILEREK. Sessiz bir 0 varsayilani, Kerteriz
+            # stride 10 ile kosarken taban cizgisinin tam hizli kosmasina yol
+            # acardi; sonuc makul gorunur (taban cizgisi daha dogru cikar) ve
+            # hicbir sey hata vermez. Cagiran gnss_position_stride:=0 ya da
+            # gnss_position_stride:=10 demek ZORUNDADIR. Legacy yetenegi
+            # kaldirilmadi, yalnizca acikca istenir oldu.
+            DeclareLaunchArgument("gnss_position_stride"),
             Node(
                 package="robot_localization",
                 executable="ekf_node",

@@ -262,4 +262,39 @@ TEST(KittiRunner, InvalidStrideFailsExplicitly) {
   EXPECT_FALSE(r.message.empty());
 }
 
+TEST(KittiRunner, StrideOneReproducesTheLegacyTrajectoryBitForBit) {
+  // Bu test, F2.4'ten ONCEKI sayilara karsi bir GOLDEN DEGILDIR — depoda
+  // dondurulmus bir legacy yorunge yok. Sinanan sey daha dar ama yine de
+  // gercek bir sey: seyreltme KOD YOLU, hicbir olcumu elemedigi yapilandirmada
+  // (stride 1) filtre ciktisini DEGISTIRMEMELIDIR.
+  //
+  // Mutasyon duyarliligi: kapi yanlis damgayi elese, `contains_stamp` yanlis
+  // liste uzerinde arasa veya plan t0'i farkli secse, iki yorunge ayrisirdi.
+  const auto ev = fixture_olaylari();
+
+  KittiRunnerConfig legacy;
+  KittiRunnerConfig stride_bir;
+  stride_bir.gnss_sampling.enabled = true;
+  stride_bir.gnss_sampling.stride = 1;
+
+  const auto a = run_kitti(ev, legacy);
+  const auto b = run_kitti(ev, stride_bir);
+  ASSERT_TRUE(a.ok) << a.message;
+  ASSERT_TRUE(b.ok) << b.message;
+
+  EXPECT_EQ(a.stats.gnss_position.submitted, b.stats.gnss_position.submitted)
+      << "stride 1 bir olcum elemis";
+  EXPECT_EQ(b.stats.gnss_position.skipped_not_selected, 0);
+
+  ASSERT_EQ(a.trajectory.size(), b.trajectory.size());
+  for (std::size_t i = 0; i < a.trajectory.size(); ++i) {
+    EXPECT_EQ(a.trajectory[i].stamp_ns, b.trajectory[i].stamp_ns);
+    EXPECT_LT((a.trajectory[i].position_w - b.trajectory[i].position_w).cwiseAbs().maxCoeff(),
+              0.0 + 1e-18)
+        << "seyreltme kod yolu legacy ciktiyi degistirmis (indeks " << i << ")";
+    EXPECT_LT((a.trajectory[i].velocity_w - b.trajectory[i].velocity_w).cwiseAbs().maxCoeff(),
+              0.0 + 1e-18);
+  }
+}
+
 } // namespace

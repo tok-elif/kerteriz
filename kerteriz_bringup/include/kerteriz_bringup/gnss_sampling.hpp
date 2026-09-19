@@ -51,6 +51,7 @@
 #include "kerteriz_bringup/dataset_event.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -138,6 +139,30 @@ inline double candidate_rate_hz(const SamplingPlan& plan) {
   }
   const double span_s = static_cast<double>(plan.candidate_span_ns) * 1e-9;
   return static_cast<double>(plan.candidate_count - 1) / span_s;
+}
+
+/// `measurement_stamps` uzerinden SIRAYA ve ICERIGE duyarli ozet.
+///
+/// ======================= NEDEN TEK YERDE DURUYOR ============================
+///
+/// Kerteriz kosucusu ve harici taban cizgisi yayincisi AYRI iki surectir ve
+/// stride'i AYRI komut satirlarindan alir. "Ikisi ayni olcum damgalarini
+/// aldi" ifadesi, iki log'da karsilastirilabilir TEK bir sayi olmadan
+/// dogrulanamaz; sayaclar esit gorunup kumeler farkli olabilir.
+///
+/// Bu yuzden ozet iki tarafta da BU fonksiyondan uretilir. Karistirma
+/// algoritmasi ikinci bir dosyaya kopyalansaydi, kopyalarin ayrismasi tam da
+/// tespit etmesi beklenen hatayi gorunmez kilardi.
+///
+/// Ozet kriptografik DEGILDIR; isi kazara ayrisan iki kumeyi gorunur kilmaktir.
+/// Bos kume icin 0 doner — yanina her zaman `selected_usable_count` basilir,
+/// boylece "bos kume" ile "ozet 0" karistirilmaz.
+inline std::uint64_t measurement_stamp_digest(const SamplingPlan& plan) {
+  std::uint64_t ozet = 0;
+  for (const TimeNs t : plan.measurement_stamps) {
+    ozet ^= static_cast<std::uint64_t>(t) + 0x9E3779B97F4A7C15ULL + (ozet << 6) + (ozet >> 2);
+  }
+  return ozet;
 }
 
 /// Kosucunun baslatma kaydiyla AYNI kural: ilk ara-degerlenmemis referans poz.

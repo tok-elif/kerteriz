@@ -14,10 +14,16 @@
 ///
 /// SEYRELTME OPT-IN'DIR (F2.4-C). `--gnss-position-stride` verilmezse davranis
 /// LEGACY'dir ve tam hizli sonuclar bit-birebir korunur.
+///
+/// WITHHELD DENEY SOZLESMESI. `--withheld-reference` istemek, F2.4-C/D'de
+/// dondurulan withheld deneyini kosmak demektir; o deneyin bayrak kombinasyonu
+/// KOSU BASLAMADAN dogrulanir (`withheld_contract.hpp`) ve eksikse exit 2.
+/// Withheld istenmeyen kosular — legacy dahil — bundan ETKILENMEZ.
 
 #include "kerteriz_bringup/ate.hpp"
 #include "kerteriz_bringup/kitti_oxts.hpp"
 #include "kerteriz_bringup/kitti_runner.hpp"
+#include "kerteriz_bringup/withheld_contract.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -33,9 +39,17 @@ using kerteriz_bringup::KittiRunnerConfig;
 using kerteriz_bringup::TrajectoryRow;
 
 int kullanim() {
-  std::fprintf(stderr, "kullanim: kerteriz_kitti_runner --dataset <yol> --output <csv>\n"
-                       "          [--reference <csv>] [--emit-baseline-params <yaml>]\n"
-                       "          [--no-gnss-velocity] [--ate-max-dt-ms N]\n");
+  std::fprintf(stderr,
+               "kullanim: kerteriz_kitti_runner --dataset <yol> --output <csv>\n"
+               "          [--reference <csv>] [--emit-baseline-params <yaml>]\n"
+               "          [--no-gnss-velocity] [--ate-max-dt-ms N]\n"
+               "          [--gnss-position-stride N] [--sampling-manifest <csv>]\n"
+               "          [--withheld-reference <csv>]\n"
+               "\n"
+               "--withheld-reference F2.4-C/D withheld deneyidir ve su uceni\n"
+               "birlikte ister: --gnss-position-stride %d, --no-gnss-velocity,\n"
+               "--sampling-manifest <csv>.\n",
+               kerteriz_bringup::kWithheldProtocolStride);
   return 2;
 }
 
@@ -127,6 +141,10 @@ int main(int argc, char** argv) {
   std::string baseline_param_yolu;
   std::string withheld_yolu;
   std::string manifest_yolu;
+  // Withheld sozlesmesi "deger dogru mu" degil "bayrak VERILDI mi" diye sorar;
+  // varsayilanla ayrimi kaybetmemek icin ayrica izlenir.
+  bool stride_verildi = false;
+  bool hiz_kapatildi = false;
   kerteriz::TimeNs ate_max_dt_ns = 20000000; // 20 ms
 
   KittiRunnerConfig kosucu;
@@ -148,6 +166,7 @@ int main(int argc, char** argv) {
       const std::string v = sonraki();
       kosucu.gnss_sampling.enabled = true;
       kosucu.gnss_sampling.stride = std::atoi(v.c_str());
+      stride_verildi = true;
       // Gecersiz deger SESSIZCE duzeltilmez: raporlanan sozlesme ile gercekte
       // kosulan sozlesme ayrisirdi.
       if (kosucu.gnss_sampling.stride <= 0) {
@@ -160,6 +179,7 @@ int main(int argc, char** argv) {
       manifest_yolu = sonraki();
     } else if (a == "--no-gnss-velocity") {
       kosucu.use_gnss_velocity = false;
+      hiz_kapatildi = true;
     } else if (a == "--ate-max-dt-ms") {
       ate_max_dt_ns = static_cast<kerteriz::TimeNs>(std::atoll(sonraki().c_str())) * 1000000;
     } else {
@@ -169,6 +189,22 @@ int main(int argc, char** argv) {
   }
   if (veri_yolu.empty() || cikti_yolu.empty()) {
     return kullanim();
+  }
+
+  // Sozlesme veri seti OKUNMADAN once dogrulanir: eksik bayrakli bir kosu
+  // basariyla bitip makul gorunen bir CSV birakmasin.
+  {
+    kerteriz_bringup::WithheldCliRequest istek;
+    istek.withheld_requested = !withheld_yolu.empty();
+    istek.stride_given = stride_verildi;
+    istek.stride = kosucu.gnss_sampling.stride;
+    istek.gnss_velocity_disabled = hiz_kapatildi;
+    istek.sampling_manifest_given = !manifest_yolu.empty();
+    const auto sozlesme = kerteriz_bringup::check_withheld_contract(istek);
+    if (!sozlesme.ok) {
+      std::fprintf(stderr, "%s\n", sozlesme.message.c_str());
+      return 2;
+    }
   }
 
   KittiConfig veri_cfg;
@@ -193,16 +229,10 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "referans yazilamadi: %s\n", referans_yolu.c_str());
     return 1;
   }
-  if (!withheld_yolu.empty()) {
-    if (!kosucu.gnss_sampling.enabled) {
-      std::fprintf(stderr, "--withheld-reference yalnizca --gnss-position-stride ile "
-                           "anlamlidir (legacy modda withheld kume bostur)\n");
-      return 2;
-    }
-    if (!referans_yaz(withheld_yolu, sonuc.withheld_reference)) {
-      std::fprintf(stderr, "withheld referans yazilamadi: %s\n", withheld_yolu.c_str());
-      return 1;
-    }
+  // Seyreltmenin acik oldugunu withheld sozlesmesi yukarida garanti etti.
+  if (!withheld_yolu.empty() && !referans_yaz(withheld_yolu, sonuc.withheld_reference)) {
+    std::fprintf(stderr, "withheld referans yazilamadi: %s\n", withheld_yolu.c_str());
+    return 1;
   }
   if (!manifest_yolu.empty() && !manifest_yaz(manifest_yolu, sonuc.sampling)) {
     std::fprintf(stderr, "seyreltme manifesti yazilamadi: %s\n", manifest_yolu.c_str());
@@ -237,6 +267,10 @@ int main(int argc, char** argv) {
     std::printf("    secili kullanilabilir olcum %d\n", p.selected_usable_count);
     std::printf("    secili ama ara-degerlenmis  %d\n", p.selected_interpolated_skipped);
     std::printf("    withheld referans           %d\n", p.withheld_reference_count);
+    // Harici taban cizgisi yayincisi AYNI fonksiyondan AYNI sayiyi basar; iki
+    // sureci karsilastirmak icin tek karsilastirilabilir token budur.
+    std::printf("    olcum damga ozeti           %llu\n",
+                static_cast<unsigned long long>(kerteriz_bringup::measurement_stamp_digest(p)));
   }
   std::printf("  baslatma damgasi       %lld\n", static_cast<long long>(s.init_stamp_ns));
   std::printf("  baslangic konumu       [%.3f %.3f %.3f]\n", sonuc.init.position_w.x(),

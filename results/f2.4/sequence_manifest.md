@@ -89,10 +89,21 @@ Gayriresmî ayna ile bu koşul aşılmaz; veri seti depoya da konmaz.
 
 `0032` ve `0039` dizilerinde harici `robot_localization` taban çizgisinin
 ıraksamasına dair denetim kaydı: [`baseline_audit.md`](baseline_audit.md).
-Özet: `sensor_timeout`, eksen konvansiyonu, yer çekimi yorumu ve "GNSS
-füzyona girmiyor" hipotezleri **elendi**; büyüyen sorun güncellemeler arası
-ölü-hesap sürüklenmesidir. Mevcut dondurulmuş RL yapılandırması seyrek/uzun
-dizilerde adil bir doğruluk kıyası olarak yorumlanmamalıdır.
+Özet: `sensor_timeout` ölçüm düşürüyor, KITTI IMU eksen/işaret konvansiyonu
+yanlış, **ivmeölçer yer çekimi içermiyor** ve "GNSS füzyona girmiyor"
+hipotezleri **elendi**. Büyüyen sorun güncellemeler arası ölü-hesap
+sürüklenmesidir.
+
+Dikkat: elenen hipotez *ivmeölçerin yer çekimi içerip içermediğidir* — yani
+`ax/ay/az` yer çekimi içeren özgül kuvvettir ve
+`imu0_remove_gravitational_acceleration: true` doğru ayardır.
+Bu, yer çekimini tablodan çıkarmaz:
+**yönelim sürüklenmesi → artık yer çekimi sızıntısı** hâlâ ayakta duran tek
+mekanizma adayıdır ve **nedenselliği izole edilmemiştir** (süre ile dönme
+dinamiği dört diziyle ayrıştırılamıyor).
+
+Mevcut dondurulmuş RL yapılandırması seyrek/uzun dizilerde adil bir doğruluk
+kıyası olarak yorumlanmamalıdır.
 
 ## Bilimsel sınır
 

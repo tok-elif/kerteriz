@@ -61,6 +61,9 @@ int main(int argc, char** argv) {
   const auto adim_ms = node->declare_parameter<int>("clock_step_ms", 10);
   const auto hiz = node->declare_parameter<double>("realtime_factor", 1.0);
   // Taban cizgisine GNSS HIZI verilmez; gerekce yapilandirma dosyasindadir.
+  // Parametre GERIYE DONUK uyumluluk icin duruyor ama YALNIZCA false kabul
+  // eder: true verildiginde dugum acik hatayla cikar. Onceden true degeri
+  // sessizce yok sayiliyordu ve "hiz yayinlaniyor" izlenimi birakiyordu.
   const auto hiz_yayinla = node->declare_parameter<bool>("publish_gnss_velocity", false);
   // F2.4-C: 0 (veya verilmemis) = LEGACY, seyreltme yok. Pozitif deger
   // Kerteriz kosucusuyla AYNI saf politikayi calistirir.
@@ -68,6 +71,15 @@ int main(int argc, char** argv) {
 
   if (veri_yolu.empty()) {
     RCLCPP_ERROR(node->get_logger(), "dataset_dir parametresi zorunlu");
+    return 2;
+  }
+  if (hiz_yayinla) {
+    RCLCPP_ERROR(node->get_logger(),
+                 "publish_gnss_velocity=true DESTEKLENMIYOR. nav_msgs/Odometry twist'i "
+                 "COCUK CERCEVEDEDIR, GNSS hizimiz ise dunya ENU'sundadir; cevirmek icin "
+                 "taban cizgisine Kerteriz'de olmayan bir yonelim vermek gerekirdi "
+                 "(config/robot_localization_baseline.yaml). Parametre sessizce yok "
+                 "sayilmaz; kaldirin veya false birakin.");
     return 2;
   }
 
@@ -92,10 +104,11 @@ int main(int argc, char** argv) {
     return 1;
   }
   if (politika.enabled) {
-    std::uint64_t ozet = 0;
-    for (const TimeNs t : plan.measurement_stamps) {
-      ozet ^= static_cast<std::uint64_t>(t) + 0x9E3779B97F4A7C15ULL + (ozet << 6) + (ozet >> 2);
-    }
+    // Ozet Kerteriz kosucusuyla AYNI paylasimli fonksiyondan gelir
+    // (gnss_sampling.hpp). Algoritma burada TEKRARLANMAZ: iki kopya ayrisirsa
+    // ozet tam da yakalamasi beklenen ayrismayi gizlerdi. Iki sureci
+    // karsilastirmak icin stride + olcum sayisi + ozet uclusune bakilir.
+    const std::uint64_t ozet = kerteriz_bringup::measurement_stamp_digest(plan);
     RCLCPP_INFO(node->get_logger(),
                 "GNSS konum seyreltmesi acik: stride=%d aday=%d secili_slot=%d olcum=%d "
                 "ara-degerlenmis-atlanan=%d damga_ozeti=%llu",
@@ -173,12 +186,10 @@ int main(int argc, char** argv) {
         }
         gnss_yayin->publish(m);
         ++gnss_sayisi;
-      } else if (e.kind == DatasetEventKind::kGnssVelocity && hiz_yayinla) {
-        // Varsayilan olarak KAPALIDIR. nav_msgs/Odometry twist'i COCUK
-        // CERCEVEDEDIR; bizim GNSS hizimiz ise dunya ENU'sundadir. Cevirmek
-        // icin bir yonelim gerekir ve o yonelimi taban cizgisine vermek ona
-        // Kerteriz'de olmayan bilgi vermek olurdu. Fark gizlenmiyor,
-        // yapilandirmada ve raporda yaziliyor.
+      } else if (e.kind == DatasetEventKind::kGnssVelocity) {
+        // Bu taban cizgisinde GNSS hizi HICBIR yapilandirmada yayinlanmaz;
+        // `publish_gnss_velocity=true` verilirse dugum yukarida acik hatayla
+        // cikmistir. Fark gizlenmiyor, yapilandirmada ve raporda yaziliyor.
         continue;
       }
     }

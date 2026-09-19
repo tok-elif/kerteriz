@@ -198,8 +198,14 @@ ayni KITTI veri seti
 ros2 launch kerteriz_bringup robot_localization_baseline.launch.py \
   dataset_dir:=<drive>_sync \
   output_csv:=/tmp/baseline_traj.csv \
-  initial_state_params:=/tmp/baseline_init.yaml
+  initial_state_params:=/tmp/baseline_init.yaml \
+  gnss_position_stride:=0
 ```
+
+`gnss_position_stride` **zorunludur ve varsayılanı yoktur**: `0` tam hızlı (legacy)
+koşudur, pozitif bir değer F2.4-C seyreltmesidir ve Kerteriz koşucusuna verilen
+`--gnss-position-stride` ile **aynı** olmalıdır. Sessiz bir varsayılan, iki sürecin
+farklı GNSS setiyle koşup sonucun yine de makul görünmesi anlamına gelirdi.
 
 Filtre ayarları [`kerteriz_bringup/config/robot_localization_baseline.yaml`](kerteriz_bringup/config/robot_localization_baseline.yaml)
 içindedir. Bilgi kümesi farkları (GNSS hızının verilememesi, bias durumunun olmaması,

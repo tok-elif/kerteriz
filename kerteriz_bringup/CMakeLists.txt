@@ -79,6 +79,10 @@ if(KERTERIZ_BRINGUP_BUILD_TESTING)
   ament_add_gtest(test_gnss_sampling test/test_gnss_sampling.cpp)
   target_link_libraries(test_gnss_sampling kerteriz_bringup_adapters)
 
+  # F2.4 — withheld deney sozlesmesinin CLI kapisi (saf, veri seti gerektirmez).
+  ament_add_gtest(test_withheld_contract test/test_withheld_contract.cpp)
+  target_link_libraries(test_withheld_contract kerteriz_bringup_adapters)
+
   ament_add_gtest(test_kitti_runner test/test_kitti_runner.cpp)
   target_link_libraries(test_kitti_runner kerteriz_bringup_adapters)
   target_compile_definitions(test_kitti_runner

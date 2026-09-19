@@ -11,6 +11,7 @@
 
 #include "kerteriz_bringup/gnss_sampling.hpp"
 
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
@@ -23,6 +24,7 @@ using kerteriz_bringup::DatasetEvent;
 using kerteriz_bringup::DatasetEventKind;
 using kerteriz_bringup::GnssSamplingPolicy;
 using kerteriz_bringup::initialization_stamp;
+using kerteriz_bringup::measurement_stamp_digest;
 using kerteriz_bringup::SamplingPlan;
 
 constexpr TimeNs kAdim = 100000000; // 100 ms
@@ -231,6 +233,88 @@ TEST(GnssSampling, CandidateRateIsDerivedFromTheSequenceNotHardCoded) {
   // Bos ve tek adayli durumlarda 0 doner, bolme yapilmaz.
   SamplingPlan bos;
   EXPECT_EQ(kerteriz_bringup::candidate_rate_hz(bos), 0.0);
+}
+
+// -----------------------------------------------------------------------------
+// Olcum damga ozeti — Kerteriz kosucusu ile RL yayincisinin TEK ortak tokeni
+// -----------------------------------------------------------------------------
+//
+// Iki surec stride'i ayri komut satirlarindan alir. "Ikisi ayni olcum
+// damgalarini aldi" ifadesi ancak iki log'da karsilastirilabilir bir sayi
+// varsa dogrulanabilir; ozetin isi budur. Bu yuzden ozetin sira ve icerik
+// mutasyonlarina duyarli olmasi bir ayrinti degil, isin kendisidir.
+
+/// Olay listesi olmadan, dogrudan damga listesinden plan kurar.
+SamplingPlan olcumleri_olan_plan(const std::vector<TimeNs>& damgalar) {
+  SamplingPlan p;
+  p.measurement_stamps = damgalar;
+  p.selected_usable_count = static_cast<int>(damgalar.size());
+  return p;
+}
+
+TEST(GnssSampling, DigestIsDeterministicForTheSameStamps) {
+  const std::vector<TimeNs> d{100, 200, 300};
+  EXPECT_EQ(measurement_stamp_digest(olcumleri_olan_plan(d)),
+            measurement_stamp_digest(olcumleri_olan_plan(d)));
+}
+
+TEST(GnssSampling, DigestDetectsOrderMutation) {
+  // Ayni damgalar, farkli SIRA. Ozet siraya duyarli olmasaydi, damgalari
+  // farkli sirada isleyen iki surec esit gorunurdu.
+  EXPECT_NE(measurement_stamp_digest(olcumleri_olan_plan({100, 200, 300})),
+            measurement_stamp_digest(olcumleri_olan_plan({200, 100, 300})));
+}
+
+TEST(GnssSampling, DigestDetectsContentMutation) {
+  // Tek bir damgada 1 ns fark.
+  EXPECT_NE(measurement_stamp_digest(olcumleri_olan_plan({100, 200, 300})),
+            measurement_stamp_digest(olcumleri_olan_plan({100, 201, 300})));
+}
+
+TEST(GnssSampling, DigestDetectsAMissingStamp) {
+  EXPECT_NE(measurement_stamp_digest(olcumleri_olan_plan({100, 200, 300})),
+            measurement_stamp_digest(olcumleri_olan_plan({100, 300})));
+}
+
+TEST(GnssSampling, EmptyMeasurementSetDigestsToZero) {
+  // Yaninda her zaman olcum SAYISI basilir; "bos kume" ile "ozet 0"
+  // karistirilmasin diye.
+  EXPECT_EQ(measurement_stamp_digest(SamplingPlan{}), 0ULL);
+}
+
+TEST(GnssSampling, DigestIgnoresEverythingButMeasurementStamps) {
+  // Secili slot listesi ayni, OLCUM listesi farkli: ozet olcume bakmali.
+  // Ters durumda seyreltilmis bir kosu ile ara-degerlenmis slotlari farkli
+  // olan bir kosu ayni ozeti verirdi.
+  SamplingPlan a = olcumleri_olan_plan({100, 200});
+  SamplingPlan b = olcumleri_olan_plan({100, 300});
+  a.selected_slot_stamps = {100, 200, 300};
+  b.selected_slot_stamps = {100, 200, 300};
+  a.withheld_reference_stamps = {400};
+  b.withheld_reference_stamps = {400};
+  EXPECT_NE(measurement_stamp_digest(a), measurement_stamp_digest(b));
+}
+
+TEST(GnssSampling, SameEventsAndStrideGiveTheSameDigestOnBothSides) {
+  // Kosucu ve yayinci AYNI olay listesinden AYNI fonksiyonu cagirir; iki
+  // bagimsiz plan kurmak bu esitligi temsil eder.
+  const auto ev = kareler(45, {4, 20, 33});
+  const auto kosucu_plani = plan(ev, 10);
+  const auto yayinci_plani = plan(ev, 10);
+  ASSERT_TRUE(kosucu_plani.status.ok);
+  EXPECT_EQ(measurement_stamp_digest(kosucu_plani), measurement_stamp_digest(yayinci_plani));
+}
+
+TEST(GnssSampling, DifferentStrideGivesADifferentDigest) {
+  // HIC olmasi istenmeyen durum: bir taraf stride 10, digeri legacy. Ozetler
+  // ayrisiyor olmasaydi bu hata iki log karsilastirilarak da bulunamazdi.
+  const auto ev = kareler(45, {4, 20, 33});
+  const auto seyrek = plan(ev, 10);
+  const auto tam_hizli = plan(ev, 10, /*enabled=*/false);
+  ASSERT_TRUE(seyrek.status.ok);
+  ASSERT_TRUE(tam_hizli.status.ok);
+  ASSERT_NE(seyrek.measurement_stamps.size(), tam_hizli.measurement_stamps.size());
+  EXPECT_NE(measurement_stamp_digest(seyrek), measurement_stamp_digest(tam_hizli));
 }
 
 } // namespace
