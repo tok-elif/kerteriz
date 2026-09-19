@@ -109,11 +109,18 @@ int main(int argc, char** argv) {
     // ozet tam da yakalamasi beklenen ayrismayi gizlerdi. Iki sureci
     // karsilastirmak icin stride + olcum sayisi + ozet uclusune bakilir.
     const std::uint64_t ozet = kerteriz_bringup::measurement_stamp_digest(plan);
+    // `stride` `declare_parameter<int>`'ten gelir ama rclcpp tamsayi
+    // parametreyi `int64_t` olarak dondurur; `auto` da onu yakalar. Bu yuzden
+    // bicim `%ld` ve arguman acikca `long`'a cevrilir — `%d` ile basmak
+    // tanimsiz davranisti. Daraltip `%d` birakmak da olurdu ama o, buyuk bir
+    // parametre degerini LOG'da sessizce kirpardi; burada deger oldugu gibi
+    // yazilir. Plan alanlari `int`'tir, onlarin `%d`'si dogrudur.
     RCLCPP_INFO(node->get_logger(),
-                "GNSS konum seyreltmesi acik: stride=%d aday=%d secili_slot=%d olcum=%d "
+                "GNSS konum seyreltmesi acik: stride=%ld aday=%d secili_slot=%d olcum=%d "
                 "ara-degerlenmis-atlanan=%d damga_ozeti=%llu",
-                stride, plan.candidate_count, plan.selected_slot_count, plan.selected_usable_count,
-                plan.selected_interpolated_skipped, static_cast<unsigned long long>(ozet));
+                static_cast<long>(stride), plan.candidate_count, plan.selected_slot_count,
+                plan.selected_usable_count, plan.selected_interpolated_skipped,
+                static_cast<unsigned long long>(ozet));
   }
 
   auto saat = node->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
