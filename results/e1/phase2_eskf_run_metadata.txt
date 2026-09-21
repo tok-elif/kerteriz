@@ -1,0 +1,8 @@
+# E1 — kosu ustverisi (KOKEN)
+# URETILMIS DOSYA. Bu dosyadaki alanlar kosudan kosuya DEGISIR ve
+# bilimsel bir sonuc TASIMAZ. Tekrarlanabilirlik karsilastirmasi
+# `phase2_eskf_manifest.txt` uzerinden yapilir; bu dosya karsilastirmaya
+# GIRMEZ.
+
+git_commit = c494b656e72ad859fc18943146968e9d4ca58fb1
+runtime_s = 5.3615514060000002

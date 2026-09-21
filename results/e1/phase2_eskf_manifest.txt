@@ -8,7 +8,6 @@
 estimator = ESKF
 runs = 500
 master_seed = 20260916
-git_commit = b073c61462e7462b74c5b321cbc30ddd5fb5d2e0
 
 [senaryo]
 trajectory = figure_eight
@@ -84,7 +83,6 @@ emp_cov_diag[13] dba_y = 0.010033194289710851  (P0 0.01)
 emp_cov_diag[14] dba_z = 0.0085507196043864125  (P0 0.01)
 
 [sonuc sayilari]
-runtime_s = 5.8941179229999996
 failed_runs = 0
 gnss_updates_total = 75000
 gnss_accepted = 74362
@@ -98,6 +96,8 @@ nis_undefined_total = 0
 
 [komutlar]
 # depo kokunden, goreli yollarla
+make results-e1
+# esdegeri:
 cmake -S kerteriz_sim -B build/sim -DCMAKE_BUILD_TYPE=Release
 cmake --build build/sim -j
 ./build/sim/kerteriz_e1_eskf --output-dir results/e1 --git-commit <sha>

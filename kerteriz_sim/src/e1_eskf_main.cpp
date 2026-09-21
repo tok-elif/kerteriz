@@ -220,6 +220,7 @@ int main(int argc, char** argv) {
   const std::string nees_yolu = cikti_dizini + "/phase2_eskf_anees.csv";
   const std::string nis_yolu = cikti_dizini + "/phase2_eskf_anis.csv";
   const std::string manifest_yolu = cikti_dizini + "/phase2_eskf_manifest.txt";
+  const std::string metadata_yolu = cikti_dizini + "/phase2_eskf_run_metadata.txt";
   if (!nees_csv_yaz(nees_yolu, nees) || !nis_csv_yaz(nis_yolu, nis)) {
     std::fprintf(stderr, "CSV yazilamadi — dizin var mi? %s\n", cikti_dizini.c_str());
     return 1;
@@ -227,6 +228,16 @@ int main(int argc, char** argv) {
 
   // ---------------------------------------------------------------------------
   // Manifest — deneyi yeniden uretmeye yetecek kadar.
+  //
+  // BU DOSYA TAMAMEN DETERMINISTIKTIR. Ayni kod ve ayni ana tohumla bayt bayt
+  // ayni cikar; `make verify` onu BIREBIR karsilastirir ve yok sayilan alan
+  // TUTMAZ. Kosudan kosuya degisen her sey (sure, git sha, makine) yandaki
+  // `phase2_eskf_run_metadata.txt` dosyasina gider.
+  //
+  // Neden ayri: tek bir `runtime_s` satiri, dosyanin geri kalani bilimsel
+  // olarak ayni olsa bile byte-karsilastirmayi imkansiz kilardi. Cozum bir
+  // tolerans veya yok-sayma listesi DEGIL, ayrimdir: karsilastirilan dosyada
+  // nondeterministik alan hic bulunmaz.
   // ---------------------------------------------------------------------------
   {
     std::ofstream m(manifest_yolu);
@@ -244,8 +255,7 @@ int main(int argc, char** argv) {
       << "# AYNI sozlesmeden gecirilecektir.\n\n";
     m << "estimator = ESKF\n";
     m << "runs = " << mc.runs.size() << "\n";
-    m << "master_seed = " << cfg.master_seed << "\n";
-    m << "git_commit = " << git_commit << "\n\n";
+    m << "master_seed = " << cfg.master_seed << "\n\n";
 
     m << "[senaryo]\n";
     m << "trajectory = figure_eight\n";
@@ -302,7 +312,6 @@ int main(int argc, char** argv) {
     m << "\n";
 
     m << "[sonuc sayilari]\n";
-    m << "runtime_s = " << sure_s << "\n";
     m << "failed_runs = " << mc.failed_runs << "\n";
     m << "gnss_updates_total = " << toplam_guncelleme << "\n";
     m << "gnss_accepted = " << kabul << "\n";
@@ -316,10 +325,35 @@ int main(int argc, char** argv) {
 
     m << "[komutlar]\n";
     m << "# depo kokunden, goreli yollarla\n";
+    m << "make results-e1\n";
+    m << "# esdegeri:\n";
     m << "cmake -S kerteriz_sim -B build/sim -DCMAKE_BUILD_TYPE=Release\n";
     m << "cmake --build build/sim -j\n";
     m << "./build/sim/kerteriz_e1_eskf --output-dir results/e1 --git-commit <sha>\n";
     m << "python3 -m kerteriz_eval.e1_plot --input-dir results/e1\n";
+  }
+
+  // ---------------------------------------------------------------------------
+  // Kosu ustverisi — NONDETERMINISTIK. Bilimsel karsilastirmaya GIRMEZ.
+  //
+  // Buradaki hicbir alan bir sonuc degildir: `runtime_s` makineye, `git_commit`
+  // hangi surumun kosturuldugune bakar. `make verify` bu dosyayi KARSILASTIRMAZ
+  // ve karsilastirmamalidir; koken kaydi olarak durur.
+  // ---------------------------------------------------------------------------
+  {
+    std::ofstream g(metadata_yolu);
+    if (!g) {
+      std::fprintf(stderr, "kosu ustverisi yazilamadi\n");
+      return 1;
+    }
+    g << std::setprecision(17);
+    g << "# E1 — kosu ustverisi (KOKEN)\n"
+      << "# URETILMIS DOSYA. Bu dosyadaki alanlar kosudan kosuya DEGISIR ve\n"
+      << "# bilimsel bir sonuc TASIMAZ. Tekrarlanabilirlik karsilastirmasi\n"
+      << "# `phase2_eskf_manifest.txt` uzerinden yapilir; bu dosya karsilastirmaya\n"
+      << "# GIRMEZ.\n\n";
+    g << "git_commit = " << git_commit << "\n";
+    g << "runtime_s = " << sure_s << "\n";
   }
 
   // ---------------------------------------------------------------------------
@@ -373,6 +407,7 @@ int main(int argc, char** argv) {
   std::printf("\nNOT: ardisik damgalar KORELEDIR. Yukaridaki 'icinde' sayisi bir kapsama\n"
               "olasiligi veya bagimsiz hipotez testi orani DEGILDIR; betimleyici bir\n"
               "zaman serisi ozetidir.\n");
-  std::printf("cikti: %s  %s  %s\n", nees_yolu.c_str(), nis_yolu.c_str(), manifest_yolu.c_str());
+  std::printf("cikti: %s  %s  %s  %s\n", nees_yolu.c_str(), nis_yolu.c_str(), manifest_yolu.c_str(),
+              metadata_yolu.c_str());
   return 0;
 }
