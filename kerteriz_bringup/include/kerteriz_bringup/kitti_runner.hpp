@@ -51,6 +51,7 @@
 #include "kerteriz/measurements/gnss_velocity.hpp"
 #include "kerteriz_bringup/ate.hpp"
 #include "kerteriz_bringup/dataset_event.hpp"
+#include "kerteriz_bringup/gnss_sampling.hpp"
 
 #include <Eigen/Core>
 #include <algorithm>
@@ -86,6 +87,12 @@ struct KittiRunnerConfig {
 
   bool use_gnss_position = true;
   bool use_gnss_velocity = true;
+
+  /// GNSS konum seyreltmesi (F2.4-C). VARSAYILAN KAPALI = legacy davranis;
+  /// tam hizli sonuclar bit-birebir korunur. Acikken AYNI saf politika harici
+  /// taban cizgisi yayincisinda da kullanilir, boylece iki kestirimci BIREBIR
+  /// ayni olcum damgalarini alir.
+  GnssSamplingPolicy gnss_sampling;
 };
 
 /// Yorunge satiri. ATE yalnizca konum ister; CSV hiz da tasir.
@@ -99,6 +106,7 @@ struct TrajectoryRow {
 struct SensorCounts {
   int total = 0;                ///< veri setindeki olay sayisi
   int skipped_interpolated = 0; ///< politika geregi filtreye verilmedi
+  int skipped_not_selected = 0; ///< seyreltme secmedi (F2.4-C); legacy'de 0
   int submitted = 0;            ///< tampona verildi
   int accepted = 0;             ///< RejectReason::kNone
   int chi_square_gated = 0;     ///< kChiSquareGate
@@ -146,6 +154,11 @@ struct RunResult {
   InitialState init;
   std::vector<TrajectoryRow> trajectory;
   std::vector<TrajectorySample> reference; ///< ara-degerlenmemis referans
+
+  /// F2.4-C: filtreye OLCUM OLARAK VERILMEMIS referans konumlar. Seyreltme
+  /// kapaliyken BOSTUR; acikken `reference`'in gercek alt kumesidir.
+  std::vector<TrajectorySample> withheld_reference;
+  SamplingPlan sampling;
 };
 
 namespace detail {
@@ -193,6 +206,14 @@ inline void say(SensorCounts& c, kerteriz::RejectReason sebep) {
 inline RunResult run_kitti(const std::vector<DatasetEvent>& events, const KittiRunnerConfig& cfg) {
   RunResult r;
 
+  // --- 0. Seyreltme plani (F2.4-C) ----------------------------------------
+  // Kapaliyken plan legacy kumeyi tarif eder ve olay akisina HIC dokunulmaz.
+  r.sampling = build_sampling_plan(events, cfg.gnss_sampling);
+  if (!r.sampling.status.ok) {
+    r.message = r.sampling.status.message;
+    return r;
+  }
+
   // --- 1. Baslatma kaydini bul -------------------------------------------
   const DatasetEvent* ilk_ref = nullptr;
   for (const auto& e : events) {
@@ -206,6 +227,9 @@ inline RunResult run_kitti(const std::vector<DatasetEvent>& events, const KittiR
     return r;
   }
   const TimeNs t0 = ilk_ref->stamp_ns;
+  // t0 kurali seyreltme politikasiyla AYNI olmali; iki yer farkli bir
+  // baslangic secseydi olcum kumeleri sessizce ayrisirdi.
+  assert(t0 == r.sampling.init_stamp_ns && "baslatma damgasi politikayla ayrismis");
 
   Vec3 v0 = Vec3::Zero();
   for (const auto& e : events) {
@@ -285,6 +309,10 @@ inline RunResult run_kitti(const std::vector<DatasetEvent>& events, const KittiR
       if (!e.source_interpolated) {
         ++r.stats.reference_used;
         r.reference.push_back(TrajectorySample{e.stamp_ns, e.position_w});
+        if (cfg.gnss_sampling.enabled &&
+            contains_stamp(r.sampling.withheld_reference_stamps, e.stamp_ns)) {
+          r.withheld_reference.push_back(TrajectorySample{e.stamp_ns, e.position_w});
+        }
       }
       break;
     }
@@ -308,6 +336,12 @@ inline RunResult run_kitti(const std::vector<DatasetEvent>& events, const KittiR
       }
       if (e.source_interpolated) {
         ++r.stats.gnss_position.skipped_interpolated;
+        break;
+      }
+      // F2.4-C kapisi. Legacy'de `enabled = false` oldugu icin kisa devre ile
+      // hic degerlendirilmez ve tam hizli sonuc bit-birebir korunur.
+      if (cfg.gnss_sampling.enabled && !contains_stamp(r.sampling.measurement_stamps, e.stamp_ns)) {
+        ++r.stats.gnss_position.skipped_not_selected;
         break;
       }
       ++r.stats.gnss_position.submitted;

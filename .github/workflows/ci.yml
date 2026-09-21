@@ -76,7 +76,14 @@ jobs:
           import re, subprocess, sys
           from collections import defaultdict
 
-          beklenen = {"kerteriz_core": 1, "kerteriz_sim": 1, "kerteriz_ros": 1}
+          # Esik AMACLI olarak 1'dir: bu guard "paket hic test kosturmadi"
+          # durumunu yakalar, test SAYISINI dondurmaz. Gercek sayiyi yazmak
+          # her yeni testte CI'i kirar ve guard'i sayi guncelleme ritueline
+          # cevirirdi. kerteriz_bringup F2.4'te GNSS seyreltme politikasinin,
+          # withheld sozlesmesinin ve kosucu kapisinin tek dogrulama yeri
+          # oldugu icin listeye alindi.
+          beklenen = {"kerteriz_core": 1, "kerteriz_sim": 1, "kerteriz_ros": 1,
+                      "kerteriz_bringup": 1}
 
           cikti = subprocess.run(["colcon", "test-result", "--all"],
                                  capture_output=True, text=True).stdout

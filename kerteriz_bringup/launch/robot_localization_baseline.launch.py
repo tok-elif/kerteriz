@@ -12,6 +12,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -27,6 +28,16 @@ def generate_launch_description():
             # Kerteriz AYNI baslangic bilgisini tek kod yolundan alir.
             DeclareLaunchArgument("initial_state_params"),
             DeclareLaunchArgument("realtime_factor", default_value="4.0"),
+            # F2.4-C: 0 = LEGACY (seyreltme yok). Pozitif deger Kerteriz
+            # kosucusundaki --gnss-position-stride ile AYNI olmalidir.
+            #
+            # VARSAYILANI YOKTUR — BILEREK. Sessiz bir 0 varsayilani, Kerteriz
+            # stride 10 ile kosarken taban cizgisinin tam hizli kosmasina yol
+            # acardi; sonuc makul gorunur (taban cizgisi daha dogru cikar) ve
+            # hicbir sey hata vermez. Cagiran gnss_position_stride:=0 ya da
+            # gnss_position_stride:=10 demek ZORUNDADIR. Legacy yetenegi
+            # kaldirilmadi, yalnizca acikca istenir oldu.
+            DeclareLaunchArgument("gnss_position_stride"),
             Node(
                 package="robot_localization",
                 executable="ekf_node",
@@ -58,6 +69,9 @@ def generate_launch_description():
                     {
                         "dataset_dir": LaunchConfiguration("dataset_dir"),
                         "realtime_factor": LaunchConfiguration("realtime_factor"),
+                        "gnss_position_stride": ParameterValue(
+                            LaunchConfiguration("gnss_position_stride"), value_type=int
+                        ),
                         "use_sim_time": False,
                     }
                 ],

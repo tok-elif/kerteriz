@@ -23,10 +23,12 @@
 /// kayan noktaya cevrilmez, ROS mesaj damgasi saniye+nanosaniye TAMSAYI
 /// alanlarindan kurulur.
 
+#include "kerteriz_bringup/gnss_sampling.hpp"
 #include "kerteriz_bringup/kitti_oxts.hpp"
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -59,10 +61,25 @@ int main(int argc, char** argv) {
   const auto adim_ms = node->declare_parameter<int>("clock_step_ms", 10);
   const auto hiz = node->declare_parameter<double>("realtime_factor", 1.0);
   // Taban cizgisine GNSS HIZI verilmez; gerekce yapilandirma dosyasindadir.
+  // Parametre GERIYE DONUK uyumluluk icin duruyor ama YALNIZCA false kabul
+  // eder: true verildiginde dugum acik hatayla cikar. Onceden true degeri
+  // sessizce yok sayiliyordu ve "hiz yayinlaniyor" izlenimi birakiyordu.
   const auto hiz_yayinla = node->declare_parameter<bool>("publish_gnss_velocity", false);
+  // F2.4-C: 0 (veya verilmemis) = LEGACY, seyreltme yok. Pozitif deger
+  // Kerteriz kosucusuyla AYNI saf politikayi calistirir.
+  const auto stride = node->declare_parameter<int>("gnss_position_stride", 0);
 
   if (veri_yolu.empty()) {
     RCLCPP_ERROR(node->get_logger(), "dataset_dir parametresi zorunlu");
+    return 2;
+  }
+  if (hiz_yayinla) {
+    RCLCPP_ERROR(node->get_logger(),
+                 "publish_gnss_velocity=true DESTEKLENMIYOR. nav_msgs/Odometry twist'i "
+                 "COCUK CERCEVEDEDIR, GNSS hizimiz ise dunya ENU'sundadir; cevirmek icin "
+                 "taban cizgisine Kerteriz'de olmayan bir yonelim vermek gerekirdi "
+                 "(config/robot_localization_baseline.yaml). Parametre sessizce yok "
+                 "sayilmaz; kaldirin veya false birakin.");
     return 2;
   }
 
@@ -73,6 +90,37 @@ int main(int argc, char** argv) {
   if (!d.ok) {
     RCLCPP_ERROR(node->get_logger(), "KITTI ayristirma hatasi: %s", d.message.c_str());
     return 1;
+  }
+
+  // F2.4-C secim plani. AYNI paylasimli fonksiyon Kerteriz kosucusunda da
+  // kullanilir; iki kestirimci boylece BIREBIR ayni olcum damgalarini alir.
+  // Bu bir iddia degil: asagida damga sayisi ve ozeti basilarak gosterilir.
+  kerteriz_bringup::GnssSamplingPolicy politika;
+  politika.enabled = stride > 0;
+  politika.stride = politika.enabled ? stride : 1;
+  const auto plan = kerteriz_bringup::build_sampling_plan(olaylar, politika);
+  if (!plan.status.ok) {
+    RCLCPP_ERROR(node->get_logger(), "seyreltme plani kurulamadi: %s", plan.status.message.c_str());
+    return 1;
+  }
+  if (politika.enabled) {
+    // Ozet Kerteriz kosucusuyla AYNI paylasimli fonksiyondan gelir
+    // (gnss_sampling.hpp). Algoritma burada TEKRARLANMAZ: iki kopya ayrisirsa
+    // ozet tam da yakalamasi beklenen ayrismayi gizlerdi. Iki sureci
+    // karsilastirmak icin stride + olcum sayisi + ozet uclusune bakilir.
+    const std::uint64_t ozet = kerteriz_bringup::measurement_stamp_digest(plan);
+    // `stride` `declare_parameter<int>`'ten gelir ama rclcpp tamsayi
+    // parametreyi `int64_t` olarak dondurur; `auto` da onu yakalar. Bu yuzden
+    // bicim `%ld` ve arguman acikca `long`'a cevrilir — `%d` ile basmak
+    // tanimsiz davranisti. Daraltip `%d` birakmak da olurdu ama o, buyuk bir
+    // parametre degerini LOG'da sessizce kirpardi; burada deger oldugu gibi
+    // yazilir. Plan alanlari `int`'tir, onlarin `%d`'si dogrudur.
+    RCLCPP_INFO(node->get_logger(),
+                "GNSS konum seyreltmesi acik: stride=%ld aday=%d secili_slot=%d olcum=%d "
+                "ara-degerlenmis-atlanan=%d damga_ozeti=%llu",
+                static_cast<long>(stride), plan.candidate_count, plan.selected_slot_count,
+                plan.selected_usable_count, plan.selected_interpolated_skipped,
+                static_cast<unsigned long long>(ozet));
   }
 
   auto saat = node->create_publisher<rosgraph_msgs::msg::Clock>("/clock", 10);
@@ -90,6 +138,7 @@ int main(int argc, char** argv) {
   int imu_sayisi = 0;
   int gnss_sayisi = 0;
   int atlanan_interpolated = 0;
+  int atlanan_secilmeyen = 0;
 
   for (TimeNs t = bas; t <= son + adim && rclcpp::ok(); t += adim) {
     rosgraph_msgs::msg::Clock c;
@@ -122,6 +171,13 @@ int main(int argc, char** argv) {
           ++atlanan_interpolated; // Kerteriz ile AYNI politika
           continue;
         }
+        // F2.4-C kapisi. Legacy'de `enabled = false` oldugu icin kisa devre
+        // ile hic degerlendirilmez ve eski davranis KORUNUR.
+        if (politika.enabled &&
+            !kerteriz_bringup::contains_stamp(plan.measurement_stamps, e.stamp_ns)) {
+          ++atlanan_secilmeyen;
+          continue;
+        }
         nav_msgs::msg::Odometry m;
         m.header.stamp = zaman(e.stamp_ns);
         m.header.frame_id = "odom";
@@ -137,12 +193,10 @@ int main(int argc, char** argv) {
         }
         gnss_yayin->publish(m);
         ++gnss_sayisi;
-      } else if (e.kind == DatasetEventKind::kGnssVelocity && hiz_yayinla) {
-        // Varsayilan olarak KAPALIDIR. nav_msgs/Odometry twist'i COCUK
-        // CERCEVEDEDIR; bizim GNSS hizimiz ise dunya ENU'sundadir. Cevirmek
-        // icin bir yonelim gerekir ve o yonelimi taban cizgisine vermek ona
-        // Kerteriz'de olmayan bilgi vermek olurdu. Fark gizlenmiyor,
-        // yapilandirmada ve raporda yaziliyor.
+      } else if (e.kind == DatasetEventKind::kGnssVelocity) {
+        // Bu taban cizgisinde GNSS hizi HICBIR yapilandirmada yayinlanmaz;
+        // `publish_gnss_velocity=true` verilirse dugum yukarida acik hatayla
+        // cikmistir. Fark gizlenmiyor, yapilandirmada ve raporda yaziliyor.
         continue;
       }
     }
@@ -154,8 +208,9 @@ int main(int argc, char** argv) {
     rclcpp::spin_some(node);
   }
 
-  RCLCPP_INFO(node->get_logger(), "yayin bitti: imu=%d gnss=%d atlanan_interpolated=%d", imu_sayisi,
-              gnss_sayisi, atlanan_interpolated);
+  RCLCPP_INFO(node->get_logger(),
+              "yayin bitti: imu=%d gnss=%d atlanan_interpolated=%d atlanan_secilmeyen=%d",
+              imu_sayisi, gnss_sayisi, atlanan_interpolated, atlanan_secilmeyen);
   // Taban cizgisinin son ciktiyi uretmesi icin kisa bekleme.
   std::this_thread::sleep_for(std::chrono::milliseconds(1500));
   rclcpp::shutdown();
