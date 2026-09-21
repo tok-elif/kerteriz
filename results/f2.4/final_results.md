@@ -395,11 +395,11 @@ gününün on dizisiyle, bu dosyanın başındaki kod sürümünde ölçülmüş
 | yardımcı küme ayrı tabloda, ön kayıtlı istatistiklerin dışında | **EVET** |
 | sonuç sözleşmesine sonuçtan sonra hiçbir ölçüt eklenmemiş | **EVET** |
 | final dokümanlar gerçek sonuçlarla doldurulmuş | **EVET** (bu dosya) |
-| tam yerel doğrulama geçmiş | bu dosyanın commit'inde koşuldu |
-| PR CI yeşil | **HENÜZ DEĞİL** — PR açılmadı |
+| tam yerel doğrulama geçmiş | **EVET** |
+| PR CI yeşil | **HENÜZ DEĞİL** |
 
-Son iki madde tamamlanana dek F2.4-D **devam ediyor** sayılır; "büyük ölçüde
-tamam" diye raporlanmaz.
+Geriye tek bir madde kaldı: **PR CI yeşil olmadan F2.4-D devam ediyor
+sayılır**; "büyük ölçüde tamam" diye raporlanmaz.
 
 ---
 
